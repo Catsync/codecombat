@@ -1,3 +1,4 @@
+require('app/styles/modal/create-account-modal/extras-view.sass')
 CocoView = require 'views/core/CocoView'
 HeroSelectView = require 'views/core/HeroSelectView'
 template = require 'templates/core/create-account-modal/extras-view'
@@ -9,7 +10,10 @@ module.exports = class ExtrasView extends CocoView
   retainSubviews: true
 
   events:
-    'click .next-button': -> @trigger 'nav-forward'
+    'click .next-button': ->
+      if @signupState.get('path') is 'student'
+        window.tracker?.trackEvent 'CreateAccountModal Student ExtrasView Next Clicked', category: 'Students'
+      @trigger 'nav-forward'
 
   initialize: ({ @signupState } = {}) ->
     @insertSubView(new HeroSelectView({ showCurrentHero: false, createAccount: true }))

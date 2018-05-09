@@ -44,6 +44,7 @@ module.exports = class I18NEditLevelView extends I18NEditModelView
     # sprite dialogues
     for script, scriptIndex in @model.get('scripts') ? []
       for noteGroup, noteGroupIndex in script.noteChain ? []
+        continue unless noteGroup
         for spriteCommand, spriteCommandIndex in noteGroup.sprites ? []
           pathPrefix = ['scripts', scriptIndex, 'noteChain', noteGroupIndex, 'sprites', spriteCommandIndex, 'say']
 
@@ -70,3 +71,12 @@ module.exports = class I18NEditLevelView extends I18NEditModelView
             for key, value of context
               path = ['thangs', thangIndex, 'components', componentIndex, 'config', 'programmableMethods', methodName]
               @wrapRow 'Code comment', ['context', key], value, i18n[lang]?.context?[key], path
+
+    # code comments
+    for thang, thangIndex in @model.get('thangs') ? []
+      for component, componentIndex in thang.components ? []
+        continue unless component.original is LevelComponent.RefereeID
+        if (i18n = component.config?.i18n) and (context = component.config.context)
+          for key, value of context
+            path = ['thangs', thangIndex, 'components', componentIndex, 'config']
+            @wrapRow 'Referee context string', ['context', key], value, i18n[lang]?.context?[key], path

@@ -1,3 +1,4 @@
+require('app/styles/courses/classroom-settings-modal.sass')
 Classroom = require 'models/Classroom'
 ModalView = require 'views/core/ModalView'
 template = require 'templates/courses/classroom-settings-modal'
@@ -7,6 +8,7 @@ errors = require 'core/errors'
 module.exports = class ClassroomSettingsModal extends ModalView
   id: 'classroom-settings-modal'
   template: template
+  schema: require 'schemas/models/classroom.schema'
 
   events:
     'click #save-settings-btn': 'onSubmitForm'
@@ -32,6 +34,7 @@ module.exports = class ClassroomSettingsModal extends ModalView
     else
       forms.setErrorToProperty(form, 'language', $.i18n.t('common.required_field'))
       return
+
     @classroom.set(attrs)
     schemaErrors = @classroom.getValidationErrors()
     if schemaErrors

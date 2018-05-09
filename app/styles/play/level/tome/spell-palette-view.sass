@@ -4,7 +4,7 @@
 
 #spell-palette-view
   position: absolute
-  right: 45%
+  right: $spell-pallete-right
   width: $api-bar-width
   bottom: 0px
   top: 0px
@@ -15,7 +15,11 @@
   @include transition(top 0.25s ease-in-out, width 0.25s ease-in-out)
   box-shadow: 10px 4px 4px black
   overflow: hidden
-  #level-view.real-time &
+  #spell-palette-api-bar[disabled=disabled]
+    pointer-events: none
+    #palette-tab-api-area
+      opacity: 0.6
+  #level-view.real-time &, #level-view.cinematic &
     display: none
     visibility: hidden
   &.open
@@ -27,10 +31,33 @@
     .left
       position: absolute
       left: 0
-      top: 100px
+      top: 80px
       bottom: 0px
       height: auto
       width: $api-bar-width - 13
+      .section-header
+        display: block
+        color: white
+        margin-right: 10px
+
+      .spell-palette-thang-entry-view
+        display: inline-block
+        border: 5px solid black
+        border-image: url(/images/level/thang_avatar_frame.png) 20 20 20 20 fill round
+        margin: 1px
+
+        img
+          background-color: black
+          width: 72px
+          height: 72px
+          border: 1px solid transparent
+          cursor: pointer
+        &:hover img
+          border: 1px solid #f3cd90
+        &.selected img
+          border: 1px solid white
+          cursor: auto
+
       .nano-slider
         background-color: rgba(243, 169, 49, 0.5)
     .right
@@ -38,7 +65,7 @@
       right: 20px
       min-width: 200px
       left: $api-bar-width - 10px
-      top: 80px
+      top: 60px
       bottom: 0px
       //width: calc(100% - #{$api-bar-width + 50px})
       @include box-shadow(0 0 0 #000)
@@ -55,11 +82,14 @@
 
       .always-scroll-y
         overflow-y: scroll
+        .description
+          img
+            float: left
 
       .closeBtn
         position: absolute;
         right: -10px;
-        top: -5px;
+        top: 15px;
         width: 40px;
         height: 40px;
         cursor: pointer;
@@ -67,10 +97,13 @@
         z-index: 2;
 
       h1:not(.not-code), h2:not(.not-code), h3:not(.not-code), h4:not(.not-code), h5:not(.not-code), h6:not(.not-code)
-          font-family: Monaco, Menlo, Ubuntu Mono, Consolas, "source-code-pro", monospace !important
-          font-variant: normal
-          color: purple
-          text-transform: auto
+        font-family: Monaco, Menlo, Ubuntu Mono, Consolas, "source-code-pro", monospace !important
+        font-variant: normal
+        color: purple
+        text-transform: auto
+
+        body[lang="he"] &, body[lang="ar"] &, body[lang="fa"] &, body[lang="ur"] &
+          font-family: "Cousine", "Courier", "Courier New", monospace !important
 
       .popover-title
         background-color: transparent
@@ -103,6 +136,9 @@
           font-size: 12px
           font-family: Monaco, Menlo, Ubuntu Mono, Consolas, "source-code-pro", monospace !important
 
+          body[lang="he"] &, body[lang="ar"] &, body[lang="fa"] &, body[lang="ur"] &
+            font-family: "Cousine", "Courier", "Courier New", monospace !important
+
         .docs-ace
           .ace_cursor, .ace_bracket
             display: none
@@ -112,7 +148,8 @@
         font-family: Monaco, Menlo, Ubuntu Mono, Consolas, "source-code-pro", monospace !important
         font-size: 12px
 
-
+        body[lang="he"] &, body[lang="ar"] &, body[lang="fa"] &, body[lang="ur"] &
+          font-family: "Cousine", "Courier", "Courier New", monospace !important
 
     h4.tab
       color: white
@@ -199,6 +236,16 @@
       .spell-palette-entry-view
         margin-left: 0
         width: 100px
+
+  //Fixes punctuation but puts comment marker on right, which is apparently worse.
+  //body[lang="he"] &, body[lang="ar"] &, body[lang="fa"] &, body[lang="ur"] &
+  //  .ace_text-layer .ace_comment
+  //    direction: rtl
+  //    unicode-bidi: embed
+
+  body[lang="he"] &, body[lang="ar"] &, body[lang="fa"] &, body[lang="ur"] &
+    .rtl-right-aligned
+      text-align: right
 
 @media only screen and (max-width: 1100px)
   #spell-palette-view

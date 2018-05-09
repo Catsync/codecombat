@@ -45,7 +45,7 @@ PaymentHandler = class PaymentHandler extends Handler
     payment
 
   getSchoolSalesAPI: (req, res, code) ->
-    throw new errors.Unauthorized('You must be an administrator.') unless req.user?.isAdmin()
+    return @sendForbiddenError(res) unless req.user?.isAdmin()
 
     Payment.find({}, {amount: 1, created: 1, description: 1, prepaidID: 1, productID: 1, purchaser: 1, service: 1}).lean().exec (err, payments) =>
       return @sendDatabaseError(res, err) if err
@@ -89,6 +89,21 @@ PaymentHandler = class PaymentHandler extends Handler
 
     if (not req.user) or req.user.isAnonymous()
       return @sendForbiddenError(res)
+
+    if pathName is 'admin'
+      return @sendForbiddenError(res) unless req.user?.isAdmin()
+      payment = new Payment()
+      for key, val of req.body
+        if key in ['purchaser', 'recipient']
+          payment.set key, mongoose.Types.ObjectId(val)
+        else if key in ['gems', 'amount']
+          payment.set key, parseInt(val)
+        else
+          payment.set key, val
+      payment.save (err) =>
+        return @sendDatabaseError(res, err) if err
+        return @sendCreated(res, @formatEntity(req, payment))
+      return
 
     appleReceipt = req.body.apple?.rawReceipt
     appleTransactionID = req.body.apple?.transactionID
@@ -181,7 +196,6 @@ PaymentHandler = class PaymentHandler extends Handler
               if err
                 @logPaymentError(req, 'Apple incr db error.'+err)
                 return @sendDatabaseError(res, err)
-              @sendPaymentSlackMessage user: req.user, payment: payment
               @sendCreated(res, @formatEntity(req, payment))
             )
           )
@@ -273,7 +287,6 @@ PaymentHandler = class PaymentHandler extends Handler
               if err
                 @logPaymentError(req, 'Stripe recalc db error. '+err)
                 return @sendDatabaseError(res, err)
-              @sendPaymentSlackMessage user: req.user, payment: payment
               @sendSuccess(res, @formatEntity(req, payment))
           )
       )
@@ -292,7 +305,7 @@ PaymentHandler = class PaymentHandler extends Handler
         userID: req.user._id + ''
         gems: product.get('gems')
         timestamp: parseInt(req.body.stripe?.timestamp)
-        description: req.body.description
+        description: req.body.description ? product.get('name')
       }
       receipt_email: req.user.get('email')
       statement_descriptor: 'CODECOMBAT.COM'
@@ -336,7 +349,6 @@ PaymentHandler = class PaymentHandler extends Handler
         if err
           @logPaymentError(req, 'Stripe incr db error. '+err)
           return @sendDatabaseError(res, err)
-        @sendPaymentSlackMessage user: req.user, payment: payment
         @sendCreated(res, @formatEntity(req, payment))
       )
     )
@@ -366,7 +378,7 @@ PaymentHandler = class PaymentHandler extends Handler
           return @sendDatabaseError(res, err)
 
         [payments, charges] = results
-        recordedChargeIDs = (p.get('stripe').chargeID for p in payments)
+        recordedChargeIDs = (p.get('stripe').chargeID for p in payments when p.get('stripe'))
         for charge in charges
           continue unless charge.paid
           continue if charge.invoice # filter out subscription charges
@@ -411,7 +423,7 @@ PaymentHandler = class PaymentHandler extends Handler
 
   sendPaymentSlackMessage: (options) ->
     try
-      message = "#{options.user?.get('emailLower')} paid #{formatDollarValue(options.payment?.get('amount')/100)} for #{options.payment.get('description') or '???, no payment description!'}"
+      message = "#{options.user?.get('emailLower')} paid #{formatDollarValue(options.payment?.get('amount') / 100)} for #{options.payment.get('description') or '???, no payment description!'}"
       slack.sendSlackMessage message, ['tower']
     catch e
       log.error "Couldn't send Slack message on payment because of error: #{e}"

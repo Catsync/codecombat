@@ -33,6 +33,7 @@ module.exports = class Spell
         level: options.level
         session: options.session
         courseID: options.courseID
+        courseInstanceID: options.courseInstanceID
       @topBarView.render()
     Backbone.Mediator.publish 'tome:spell-created', spell: @
 
@@ -82,6 +83,11 @@ module.exports = class Spell
     # Translate comments chosen spoken language.
     return unless @commentContext
     context = $.extend true, {}, @commentContext
+
+    if @language is 'lua'
+      for k,v of context
+        context[k] = v.replace /\b([a-zA-Z]+)\.([a-zA-Z_]+\()/, '$1:$2'
+
     if @commentI18N
       spokenLanguage = me.get 'preferredLanguage'
       while spokenLanguage
@@ -141,6 +147,7 @@ module.exports = class Spell
       source = @getSource()
     unless @language is 'html'
       @thang?.aether.transpile source
+      @session.lastAST = @thang?.aether.ast
     null
 
   # NOTE: By default, I think this compares the current source code with the source *last saved to the server* (not the last time it was run)

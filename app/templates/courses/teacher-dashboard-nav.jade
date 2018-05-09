@@ -12,6 +12,7 @@
         span.navbar-brand.text-h4(data-i18n='teacher.teacher_dashboard')
       #teacher-dashboard-nav-collapse.collapse.navbar-collapse
         ul.nav.navbar-nav
+          // NOTE: Update Close.io email templates if these labels are changed!
           li(class= path.indexOf('/teachers/classes') === 0 ? 'active' : '')
             a(href='/teachers/classes')
               small.label(data-i18n='teacher.my_classes')
@@ -25,7 +26,10 @@
             a(href='/teachers/resources')
               small.label(data-i18n='teacher.resource_hub')
           li(class= path.indexOf('/teachers/resources/faq') === 0 ? 'active' : '')
-            a(href='/teachers/resources/faq')
+            - var faqURL = "/teachers/resources/faq";
+            - if (me.get('preferredLanguage') == 'nl-NL' || me.get('preferredLanguage') == 'nl-BE')
+            -     faqURL = "/teachers/resources/faq-nl-NL";
+            a(href=faqURL)
               small.label(data-i18n='teacher.educator_faq')
           //- li(class= path.indexOf('TODO') === 0 ? 'active' : '')
           //-   a(href='TODO')

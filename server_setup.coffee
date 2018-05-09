@@ -20,7 +20,7 @@ UserHandler = require './server/handlers/user_handler'
 slack = require './server/slack'
 Mandate = require './server/models/Mandate'
 global.tv4 = require 'tv4' # required for TreemaUtils to work
-global.jsondiffpatch = require 'jsondiffpatch'
+global.jsondiffpatch = require('jsondiffpatch')
 global.stripe = require('stripe')(config.stripe.secretKey)
 errors = require './server/commons/errors'
 request = require 'request'
@@ -30,6 +30,8 @@ Promise.promisifyAll(fs)
 wrap = require 'co-express'
 codePlayTags = require './server/lib/code-play-tags'
 morgan = require 'morgan'
+domainFilter = require './server/middleware/domain-filter'
+timeout = require('connect-timeout')
 
 {countries} = require './app/core/utils'
 
@@ -43,7 +45,7 @@ productionLogging = (tokens, req, res) ->
   elapsedColor = if elapsed < 500 then 90 else 31
   return null if status is 404 and /\/feedback/.test req.originalUrl  # We know that these usually 404 by design (bad design?)
   if (status isnt 200 and status isnt 201 and status isnt 204 and status isnt 304 and status isnt 302) or elapsed > 500
-    return "\x1b[90m#{req.method} #{req.originalUrl} \x1b[#{color}m#{res.statusCode} \x1b[#{elapsedColor}m#{elapsed}ms\x1b[0m"
+    return "[#{config.clusterID}] \x1b[90m#{req.method} #{req.originalUrl} \x1b[#{color}m#{res.statusCode} \x1b[#{elapsedColor}m#{elapsed}ms\x1b[0m"
   null
 
 developmentLogging = (tokens, req, res) ->
@@ -59,20 +61,8 @@ developmentLogging = (tokens, req, res) ->
   return s
 
 setupDomainFilterMiddleware = (app) ->
-  if config.isProduction
-    unsafePaths = [
-      /^\/web-dev-iframe\.html$/
-      /^\/javascripts\/web-dev-listener\.js$/
-    ]
-    app.use (req, res, next) ->
-      domainRegex = new RegExp("(.*\.)?(#{config.mainHostname}|#{config.unsafeContentHostname})")
-      domainPrefix = req.host.match(domainRegex)?[1] or ''
-      if _.any(unsafePaths, (pathRegex) -> pathRegex.test(req.path)) and (req.host isnt domainPrefix + config.unsafeContentHostname)
-        res.redirect('//' + domainPrefix + config.unsafeContentHostname + req.path)
-      else if not _.any(unsafePaths, (pathRegex) -> pathRegex.test(req.path)) and req.host is domainPrefix + config.unsafeContentHostname
-        res.redirect('//' + domainPrefix + config.mainHostname + req.path)
-      else
-        next()
+  if config.isProduction or global.testing
+    app.use domainFilter
 
 setupErrorMiddleware = (app) ->
   app.use (err, req, res, next) ->
@@ -83,21 +73,37 @@ setupErrorMiddleware = (app) ->
         err = new errors.UnprocessableEntity(err.response)
       if err.code is 409 and err.response
         err = new errors.Conflict(err.response)
+      if err.name is 'MongoError' and err.message.indexOf('timed out')
+        err = new errors.GatewayTimeout('MongoDB timeout error.')
+      if req.timedout # set by connect-timeout
+        err = new errors.ServiceUnavailable('Request timed out.')
 
       # TODO: Make all errors use this
       if err instanceof errors.NetworkError
-        return res.status(err.code).send(err.toJSON())
-
-      if err.status and 400 <= err.status < 500
-        res.status(err.status).send("Error #{err.status}")
+        console.log err.stack if err.stack and config.TRACE_ROUTES
+        res.status(err.code).send(err.toJSON())
+        if req.timedout
+          # noop return self all response-ending functions
+          res.send = res.status = res.redirect = res.end = res.json = res.sendFile = res.download = res.sendStatus = -> res
         return
+          
+      if err.status and 400 <= err.status < 500
+        console.log err.stack if err.stack and config.TRACE_ROUTES
+        return res.status(err.status).send("Error #{err.status}")
+      
+      if err.name is 'CastError' and err.kind is 'ObjectId'
+        console.log err.stack if err.stack and config.TRACE_ROUTES
+        newError = new errors.UnprocessableEntity('Invalid id provided')
+        return res.status(422).send(newError.toJSON())
 
       res.status(err.status ? 500).send(error: "Something went wrong!")
-      message = "Express error: #{req.method} #{req.path}: #{err.message} \n #{err.stack}"
-      log.error "#{message}, stack: #{err.stack}"
+      console.log err.stack if err.stack and config.TRACE_ROUTES
+      message = "Express error: \"#{req.method} #{req.path}\": #{err.stack}"
+      log.error message
       if global.testing
-        console.log "#{message}, stack: #{err.stack}"
-      slack.sendSlackMessage(message, ['ops'], {papertrail: true})
+        console.log message
+      unless message.indexOf('card was declined') >= 0
+        slack.sendSlackMessage("Express error: \"#{req.method} #{req.path}\": #{err.message}", ['ops'], {papertrail: true})
     else
       next(err)
 
@@ -108,11 +114,17 @@ setupExpressMiddleware = (app) ->
     app.use compression filter: (req, res) ->
       return false if req.headers.host is 'codecombat.com'  # CloudFlare will gzip it for us on codecombat.com
       compressible res.getHeader('Content-Type')
-  else if not global.testing
+  else if not global.testing or config.TRACE_ROUTES
     morgan.format('dev', developmentLogging)
     app.use(morgan('dev'))
 
+  app.use (req, res, next) ->
+    res.header 'X-Cluster-ID', config.clusterID
+    next()
+
   public_path = path.join(__dirname, 'public')
+  
+  app.use('/', express.static(path.join(public_path, 'templates', 'static')))
 
   if config.buildInfo.sha isnt 'dev' and config.isProduction
     app.use("/#{config.buildInfo.sha}", express.static(public_path, maxAge: '1y'))
@@ -134,7 +146,7 @@ setupExpressMiddleware = (app) ->
 
   app.use require('serve-favicon') path.join(__dirname, 'public', 'images', 'favicon.ico')
   app.use require('cookie-parser')()
-  app.use require('body-parser').json limit: '25mb'
+  app.use require('body-parser').json({limit: '25mb', strict: false})
   app.use require('body-parser').urlencoded extended: true, limit: '25mb'
   app.use require('method-override')()
   app.use require('cookie-session')
@@ -164,7 +176,7 @@ setupCountryTaggingMiddleware = (app) ->
 setupCountryRedirectMiddleware = (app, country='china', host='cn.codecombat.com') ->
   hosts = host.split /;/g
   shouldRedirectToCountryServer = (req) ->
-    reqHost = (req.hostname ? req.host).toLowerCase()  # Work around express 3.0
+    reqHost = (req.hostname ? req.host ? '').toLowerCase()  # Work around express 3.0
     return req.country is country and reqHost not in hosts and reqHost.indexOf(config.unsafeContentHostname) is -1
 
   app.use (req, res, next) ->
@@ -214,6 +226,13 @@ setupFeaturesMiddleware = (app) ->
       freeOnly: false
     }
 
+    if req.headers.host is 'brainpop.codecombat.com' or req.session.featureMode is 'brain-pop'
+      features.freeOnly = true
+      features.campaignSlugs = ['dungeon']
+      features.playViewsOnly = true
+      features.noAuth = true
+      features.brainPop = true
+      features.noAds = true
 
     if req.headers.host is 'cp.codecombat.com' or req.session.featureMode is 'code-play'
       features.freeOnly = true
@@ -221,13 +240,28 @@ setupFeaturesMiddleware = (app) ->
       features.playViewsOnly = true
       features.codePlay = true # for one-off changes. If they're shared across different scenarios, refactor
 
+    if /cn\.codecombat\.com/.test(req.get('host')) or /koudashijie/.test(req.get('host')) or req.session.featureMode is 'china'
+      features.china = true
+      features.freeOnly = true
+      features.noAds = true
+
     if config.picoCTF or req.session.featureMode is 'pico-ctf'
       features.playOnly = true
-    if req.user
-      { user } = req
-      if user.get('country') in ['china'] and not (user.isPremium() or user.get('stripe'))
-        features.freeOnly = true
+      features.noAds = true
+      features.picoCtf = true
+      
+    next()
 
+# When config.TRACE_ROUTES is set, this logs a stack trace every time an endpoint sends a response.
+# It's great for finding where a mystery endpoint is!
+# The same is done for errors in the error-handling middleware.
+setupHandlerTraceMiddleware = (app) ->
+  app.use (req, res, next) ->
+    oldSend = res.send
+    res.send = ->
+      result = oldSend.apply(@, arguments)
+      console.trace()
+      return result
     next()
 
 setupSecureMiddleware = (app) ->
@@ -252,20 +286,27 @@ setupAPIDocs = (app) ->
   app.use('/api-docs', swaggerUi.setup(swaggerDoc))
 
 exports.setupMiddleware = (app) ->
+  app.use(timeout(config.timeout))
+  setupHandlerTraceMiddleware app if config.TRACE_ROUTES
   setupSecureMiddleware app
   setupPerfMonMiddleware app
 
   setupDomainFilterMiddleware app
-  setupCountryTaggingMiddleware app
-  setupCountryRedirectMiddleware app, 'china', config.chinaDomain
-  setupCountryRedirectMiddleware app, 'brazil', config.brazilDomain
   setupQuickBailToMainHTML app
 
+  
+  setupCountryTaggingMiddleware app
+  
   setupMiddlewareToSendOldBrowserWarningWhenPlayersViewLevelDirectly app
   setupExpressMiddleware app
   setupAPIDocs app # should happen after serving static files, so we serve the right favicon
   setupPassportMiddleware app
   setupFeaturesMiddleware app
+
+  setupUserDataRoute app
+  setupCountryRedirectMiddleware app, 'china', config.chinaDomain
+  setupCountryRedirectMiddleware app, 'brazil', config.brazilDomain
+  
   setupOneSecondDelayMiddleware app
   setupRedirectMiddleware app
   setupAjaxCaching app
@@ -293,39 +334,50 @@ setupJavascript404s = (app) ->
     res.status(404).send('Wrong hash')
   )
 
-mainTemplate = fs.readFileAsync(path.join(__dirname, 'app', 'assets', 'main.html'), 'utf8').then (data) =>
-  data = data.replace '"environmentTag"', if config.isProduction then '"production"' else '"development"'
-  data = data.replace /shaTag/g, config.buildInfo.sha
-  return data
+templates = {}
+getStaticTemplate = (file) ->
+  # Don't cache templates in devlopment so you can just edit then.
+  return templates[file] if templates[file] and config.isProduction
+  templates[file] = fs.readFileAsync(path.join(__dirname, 'public', 'templates', 'static', file), 'utf8')
 
-renderMain = wrap (req, res) ->
-  template = yield mainTemplate
+renderMain = wrap (template, req, res) ->
+  template = yield getStaticTemplate(template)
   if req.features.codePlay
-   template = template.replace '<!-- CodePlay Tags Header -->', codePlayTags.header
-   template = template.replace '<!-- CodePlay Tags Footer -->', codePlayTags.footer
-
+    template = template.replace '<!-- CodePlay Tags Header -->', codePlayTags.header
+    template = template.replace '<!-- CodePlay Tags Footer -->', codePlayTags.footer
+   
   res.status(200).send template
 
 setupQuickBailToMainHTML = (app) ->
-  fast = (req, res, next) ->
-    req.features = features = {}
-    #res.header 'Cache-Control', 'public, max-age=60'
+  
+  fast = (template) ->
+    (req, res, next) ->
+      req.features = features = {}
 
-    # Send these crappy headers for now, as we dont want to block a possible
-    # redirection based on country.
-    res.header 'Cache-Control', 'no-cache, no-store, must-revalidate'
-    res.header 'Pragma', 'no-cache'
-    res.header 'Expires', 0
+      if config.isProduction or true
+        res.header 'Cache-Control', 'public, max-age=60'
+        res.header 'Expires', 60
+      else
+        res.header 'Cache-Control', 'no-cache, no-store, must-revalidate'
+        res.header 'Pragma', 'no-cache'
+        res.header 'Expires', 0
 
-    if req.headers.host is 'cp.codecombat.com'
-      features.codePlay = true # for one-off changes. If they're shared across different scenarios, refactor
+      if req.headers.host is 'cp.codecombat.com'
+        features.codePlay = true # for one-off changes. If they're shared across different scenarios, refactor
+      if /cn\.codecombat\.com/.test(req.get('host'))
+        features.china = true
 
-    renderMain(req, res)
+      renderMain(template, req, res)
 
-  app.get '/', fast
-  app.get '/play', fast
-  app.get '/play/level/:slug', fast
-  app.get '/play/:slug', fast
+  app.get '/', fast('home.html')
+  app.get '/home', fast('home.html')
+  app.get '/about', fast('about.html')
+  app.get '/features', fast('premium-features.html')
+  app.get '/privacy', fast('privacy.html')
+  app.get '/legal', fast('legal.html')
+  app.get '/play', fast('overworld.html')
+  app.get '/play/level/:slug', fast('main.html')
+  app.get '/play/:slug', fast('main.html')
 
 # Mongo-cache doesnt support the .exec() promise, so we manually wrap it.
 getMandate = (app) ->
@@ -335,10 +387,26 @@ getMandate = (app) ->
       res(data)
 
 setupUserDataRoute = (app) ->
+
+  shouldRedirectToCountryServer = (req, country, host) ->
+    reqHost = (req.hostname ? req.host).toLowerCase()  # Work around express 3.0
+    hosts = host.split /;/g
+    if req.country is country and reqHost not in hosts and reqHost.indexOf(config.unsafeContentHostname) is -1
+      hosts[0]
+    else
+      undefined
+
   app.get '/user-data', wrap (req, res) ->
     res.header 'Cache-Control', 'no-cache, no-store, must-revalidate'
     res.header 'Pragma', 'no-cache'
     res.header 'Expires', 0
+
+    targetDomain = undefined
+    targetDomain ?= shouldRedirectToCountryServer(req, 'china', config.chinaDomain)
+    targetDomain ?= shouldRedirectToCountryServer(req, 'brazil', config.brazilDomain)
+
+    redirect = "window.location = 'https://#{targetDomain}' + window.location.pathname;" if targetDomain
+
 
     # IMPORTANT: If you edit here, make sure app/assets/javascripts/run-tests.js puts in placeholders for
     # running client tests on Travis.
@@ -372,7 +440,8 @@ setupUserDataRoute = (app) ->
       "window.features = #{JSON.stringify(req.features)};"
       "window.me = {"
       "\tget: function(attribute) { return window.userObject[attribute]; }"
-      "}"
+      "};"
+      redirect or ''
     ].join "\n"
 
 setupFallbackRouteToIndex = (app) ->
@@ -380,19 +449,23 @@ setupFallbackRouteToIndex = (app) ->
     res.header 'Cache-Control', 'no-cache, no-store, must-revalidate'
     res.header 'Pragma', 'no-cache'
     res.header 'Expires', 0
-    renderMain req, res
+    renderMain 'main.html', req, res
 
 
 setupFacebookCrossDomainCommunicationRoute = (app) ->
   app.get '/channel.html', (req, res) ->
     res.sendfile path.join(__dirname, 'public', 'channel.html')
 
+setupUpdateBillingRoute = (app) ->
+  app.get '/update-billing', (req, res) ->
+    res.sendfile path.join(__dirname, 'public', 'update-billing.html')
+
 exports.setupRoutes = (app) ->
   routes.setup(app)
 
   baseRoute.setup app
-  setupUserDataRoute app
   setupFacebookCrossDomainCommunicationRoute app
+  setupUpdateBillingRoute app
   setupFallbackRouteToIndex app
   setupErrorMiddleware app
 

@@ -1,3 +1,4 @@
+require('app/styles/teachers/teacher-trial-requests.sass')
 RootView = require 'views/core/RootView'
 forms = require 'core/forms'
 TrialRequest = require 'models/TrialRequest'
@@ -172,6 +173,7 @@ module.exports = class ConvertToTeacherAccountView extends RootView
     window.tracker?.trackEvent 'Teachers Convert Account Submitted', category: 'Teachers', ['Mixpanel']
     @formChanged = false
     me.setRole @trialRequest.get('properties').role.toLowerCase(), true
+    me.unsubscribe()
     application.router.navigate('/teachers/classes', {trigger: true})
 
 formSchema = {

@@ -11,7 +11,7 @@
         p(data-i18n="signup.confirm_individual_blurb")
 
     .signup-info-box-wrapper
-      .text-burgandy(data-i18n="signup.write_this_down")
+      .text-burgundy(data-i18n="signup.write_this_down")
       .signup-info-box.text-center
         if me.get('name')
           h4
@@ -31,5 +31,9 @@
               else
                 span(data-i18n="general.email")
                 | : #{me.get('email')}
+
+    //-  TODO: use our Vue Component to grab the school (based only on the name, hide other inputs) and put it in user.school (only if they found a match)
+    if view.signupState.get('wantInSchool')
+      div#nces-search-input
 
     button#start-btn.btn.btn-navy.btn-lg.m-t-3(data-i18n="signup.start_playing")

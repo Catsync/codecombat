@@ -1,4 +1,4 @@
-###### Last updated: 08/23/2016
+###### Last updated: 02/24/2017
 
 ##### Lesson Plans
 # Introduction to Computer Science
@@ -313,7 +313,7 @@ Now you can use your variable instead of the value itself!
 
 So a variable can stand in for a value. 
 
-Variables can also be changed and checked. You could say `score = 0`, and then later `score = 1`. Or you could use your variable is in the expression for loop, i.e. `while score < 10`: 
+Variables can also be changed and checked. You could say `score = 0`, and then later `score = 1`. Or you could use your variable is in the expression for loop, i.e. `while score < 10:` 
 
 #### Interact (5 mins)
 
@@ -368,6 +368,8 @@ Focus on clearly communicating the goal of the level, and describing the problem
 ### Summary 
 
 The arena level is a reward for completing the required work. Students who have fallen behind in the levels or who have not completed their written reflections should use this time to finish. As students turn in their work, they can enter the Wakka Maul arena and attempt multiple solutions until time is called. 
+
+See the [Arena Levels Guide](/teachers/resources/arenas) for more details.
 
 ### Transfer Goals
 - Write accurate Python syntax

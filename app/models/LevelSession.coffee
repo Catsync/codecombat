@@ -1,4 +1,6 @@
 CocoModel = require './CocoModel'
+api = require('core/api')
+LevelConstants = require 'lib/LevelConstants'
 
 module.exports = class LevelSession extends CocoModel
   @className: 'LevelSession'
@@ -80,31 +82,58 @@ module.exports = class LevelSession extends CocoModel
     newTopScores = []
     now = new Date()
     for scoreType in level.get('scoreTypes') ? []
+      scoreType = scoreType.type if scoreType.type
       oldTopScore = _.find oldTopScores, type: scoreType
       newScore = scores[scoreType]
       unless newScore?
-        newTopScores.push oldTopScore
+        newTopScores.push oldTopScore if oldTopScore
         continue
-      newScore *= -1 if scoreType in ['time', 'damage-taken']  # Make it so that higher is better
+      newScore *= -1 if scoreType in LevelConstants.lowerIsBetterScoreTypes  # Index relies on "top" scores being higher numbers
       if not oldTopScore? or newScore > oldTopScore.score
         newTopScores.push type: scoreType, date: now, score: newScore
       else
         newTopScores.push oldTopScore
     state.topScores = newTopScores
     @set 'state', state
+    scores = LevelSession.getTopScores({level: level.toJSON(), session: @toJSON()})
+    Backbone.Mediator.publish('level:top-scores-updated', {scores})
 
-  generateSpellsObject: (options={}) ->
-    {level} = options
-    {createAetherOptions} = require 'lib/aether_utils'
-    aetherOptions = createAetherOptions functionName: 'plan', codeLanguage: @get('codeLanguage'), skipProtectAPI: options.level?.isType('game-dev')
-    spellThang = thang: {id: 'Hero Placeholder'}, aether: new Aether aetherOptions
-    spells = "hero-placeholder/plan": thang: spellThang, name: 'plan'
-    source = @get('code')?['hero-placeholder']?.plan ? ''
-    try
-      spellThang.aether.transpile source
-    catch e
-      console.log "Couldn't transpile!\n#{source}\n", e
-      spellThang.aether.transpile ''
-    spells
+  @getTopScores: ({level, session}) ->
+    Level = require('models/Level')
+    scores = (_.clone(score) for score in session.state?.topScores ? [])
+    score.score *= -1 for score in scores when score.type in LevelConstants.lowerIsBetterScoreTypes  # Undo negative storage for display
+    if level
+      for sessionScore in scores
+        thresholdAchieved = Level.thresholdForScore(_.assign(_.pick(sessionScore, 'score', 'type'), {level}))
+        if thresholdAchieved
+          sessionScore.thresholdAchieved = thresholdAchieved
+    scores
 
-  isFake: -> @id is 'A Fake Session ID'
+  @fakeID: 'ateacherfakesessionidval'  # 24 characters like other IDs for schema validation
+  isFake: -> @id is LevelSession.fakeID
+
+  inLeague: (leagueId) ->
+    return false unless @get('leagues')
+    for league in @get('leagues')
+      return true if league.leagueID is leagueId
+    return false
+
+  updateKeyValueDb: (keyValueDb) ->
+    oldDb = @get('keyValueDb') ? {}
+    @originalKeyValueDb ?= oldDb
+    @set('keyValueDb', keyValueDb) if _.size keyValueDb
+
+  saveKeyValueDb: ->
+    keyValueDb = @get('keyValueDb') ? {}
+    return unless @originalKeyValueDb
+    return if @isFake()
+    for key, value of keyValueDb
+      oldValue = @originalKeyValueDb[key]
+      if not oldValue or typeof(oldValue) is 'string' or typeof(value) is 'string'
+        api.levelSessions.setKeyValue({ sessionID: @id, key, value})
+      else if typeof(oldValue) is 'number' and typeof(value) is 'number'
+        increment = value - oldValue
+        api.levelSessions.incrementKeyValue({ sessionID: @id, key, value: increment})
+
+    @set('keyValueDb', keyValueDb) if _.size keyValueDb
+    delete @originalKeyValueDb

@@ -89,24 +89,26 @@ countries = [
 
 courseIDs =
   INTRODUCTION_TO_COMPUTER_SCIENCE: '560f1a9f22961295f9427742'
-  COMPUTER_SCIENCE_2: '5632661322961295f9428638'
   GAME_DEVELOPMENT_1: '5789587aad86a6efb573701e'
   WEB_DEVELOPMENT_1: '5789587aad86a6efb573701f'
-  COMPUTER_SCIENCE_3: '56462f935afde0c6fd30fc8c'
+  COMPUTER_SCIENCE_2: '5632661322961295f9428638'
   GAME_DEVELOPMENT_2: '57b621e7ad86a6efb5737e64'
   WEB_DEVELOPMENT_2: '5789587aad86a6efb5737020'
+  COMPUTER_SCIENCE_3: '56462f935afde0c6fd30fc8c'
+  GAME_DEVELOPMENT_3: '5a0df02b8f2391437740f74f'
   COMPUTER_SCIENCE_4: '56462f935afde0c6fd30fc8d'
   COMPUTER_SCIENCE_5: '569ed916efa72b0ced971447'
   COMPUTER_SCIENCE_6: '5817d673e85d1220db624ca4'
 
 orderedCourseIDs = [
   courseIDs.INTRODUCTION_TO_COMPUTER_SCIENCE
-  courseIDs.COMPUTER_SCIENCE_2
   courseIDs.GAME_DEVELOPMENT_1
   courseIDs.WEB_DEVELOPMENT_1
-  courseIDs.COMPUTER_SCIENCE_3
+  courseIDs.COMPUTER_SCIENCE_2
   courseIDs.GAME_DEVELOPMENT_2
   courseIDs.WEB_DEVELOPMENT_2
+  courseIDs.COMPUTER_SCIENCE_3
+  courseIDs.GAME_DEVELOPMENT_3
   courseIDs.COMPUTER_SCIENCE_4
   courseIDs.COMPUTER_SCIENCE_5
   courseIDs.COMPUTER_SCIENCE_6
@@ -114,15 +116,37 @@ orderedCourseIDs = [
 
 courseAcronyms = {}
 courseAcronyms[courseIDs.INTRODUCTION_TO_COMPUTER_SCIENCE] = 'CS1'
-courseAcronyms[courseIDs.COMPUTER_SCIENCE_2] = 'CS2'
 courseAcronyms[courseIDs.GAME_DEVELOPMENT_1] = 'GD1'
 courseAcronyms[courseIDs.WEB_DEVELOPMENT_1] = 'WD1'
-courseAcronyms[courseIDs.COMPUTER_SCIENCE_3] = 'CS3'
+courseAcronyms[courseIDs.COMPUTER_SCIENCE_2] = 'CS2'
 courseAcronyms[courseIDs.GAME_DEVELOPMENT_2] = 'GD2'
 courseAcronyms[courseIDs.WEB_DEVELOPMENT_2] = 'WD2'
+courseAcronyms[courseIDs.COMPUTER_SCIENCE_3] = 'CS3'
+courseAcronyms[courseIDs.GAME_DEVELOPMENT_3] = 'GD3'
 courseAcronyms[courseIDs.COMPUTER_SCIENCE_4] = 'CS4'
 courseAcronyms[courseIDs.COMPUTER_SCIENCE_5] = 'CS5'
 courseAcronyms[courseIDs.COMPUTER_SCIENCE_6] = 'CS6'
+
+petThangIDs = [
+  '578d320d15e2501f00a585bd' # Wolf Pup
+  '5744e3683af6bf590cd27371' # Cougar
+  '5786a472a6c64135009238d3' # Raven
+  '577d5d4dab818b210046b3bf' # Pugicorn
+  '58c74b7c3d4a3d2900d43b7e' # Brown Rat
+  '58c7614a62cc3a1f00442240' # Yetibab
+  '58a262520b43652f00dad75e' # Phoenix
+  '57869cf7bd31c14400834028' # Frog
+  '578691f9bd31c1440083251d' # Polar Bear Cub
+  '58a2712b0b43652f00dae5a4' # Blue Fox
+  '58c737140ca7852e005deb8a' # Mimic
+  '57586f0a22179b2800efda37' # Baby Griffin
+]
+
+premiumContent =
+  premiumHeroesCount: '12'
+  totalHeroesCount: '16'
+  premiumLevelsCount: '330'
+  freeLevelsCount: '100'
 
 normalizeFunc = (func_thing, object) ->
   # func could be a string to a function in this class
@@ -209,6 +233,11 @@ getByPath = (target, path) ->
 
 isID = (id) -> _.isString(id) and id.length is 24 and id.match(/[a-f0-9]/gi)?.length is 24
 
+isRegionalSubscription = (name) -> /_basic_subscription/.test(name)
+
+isSmokeTestEmail = (email) ->
+  /@example.com/.test(email) or /smoketest/.test(email)
+
 round = _.curry (digits, n) ->
   n = +n.toFixed(digits)
 
@@ -275,11 +304,6 @@ getUTCDay = (offset=0) ->
   partDay = day.getUTCDate()
   partDay = "0" + partDay if partDay < 10
   "#{partYear}#{partMonth}#{partDay}"
-
-getYearSubscriptionGroup = (testGroupNumber) ->
-  switch testGroupNumber % 4
-    when 0, 2 then 'year_subscription'
-    when 1, 3 then 'year_subscription_b'
 
 # Fast, basic way to replace text in an element when you don't need much.
 # http://stackoverflow.com/a/4962398/540620
@@ -434,38 +458,6 @@ filterMarkdownCodeLanguages = (text, language) ->
 
   return text
 
-aceEditModes =
-  javascript: 'ace/mode/javascript'
-  coffeescript: 'ace/mode/coffee'
-  python: 'ace/mode/python'
-  lua: 'ace/mode/lua'
-  java: 'ace/mode/java'
-  html: 'ace/mode/html'
-
-# These ACEs are used for displaying code snippets statically, like in SpellPaletteEntryView popovers
-# and have short lifespans
-initializeACE = (el, codeLanguage) ->
-  contents = $(el).text().trim()
-  editor = ace.edit el
-  editor.setOptions maxLines: Infinity
-  editor.setReadOnly true
-  editor.setTheme 'ace/theme/textmate'
-  editor.setShowPrintMargin false
-  editor.setShowFoldWidgets false
-  editor.setHighlightActiveLine false
-  editor.setHighlightActiveLine false
-  editor.setBehavioursEnabled false
-  editor.renderer.setShowGutter false
-  editor.setValue contents
-  editor.clearSelection()
-  session = editor.getSession()
-  session.setUseWorker false
-  session.setMode aceEditModes[codeLanguage]
-  session.setWrapLimitRange null
-  session.setUseWrapMode true
-  session.setNewLineMode 'unix'
-  return editor
-
 capitalLanguages =
   'javascript': 'JavaScript'
   'coffeescript': 'CoffeeScript'
@@ -484,22 +476,27 @@ createLevelNumberMap = (levels) ->
       levelNumber = i - practiceLevelTotalCount + String.fromCharCode('a'.charCodeAt(0) + practiceLevelCurrentCount)
       practiceLevelTotalCount++
       practiceLevelCurrentCount++
+    else if level.assessment
+      practiceLevelTotalCount++
+      practiceLevelCurrentCount++
+      levelNumber = if level.assessment is 'cumulative' then $.t('play_level.combo_challenge') else $.t('play_level.concept_challenge')
     else
       practiceLevelCurrentCount = 0
     levelNumberMap[level.key] = levelNumber
   levelNumberMap
 
 findNextLevel = (levels, currentIndex, needsPractice) ->
-  # levels = [{practice: true/false, complete: true/false}]
+  # Find next available incomplete level, depending on whether practice is needed
+  # levels = [{practice: true/false, complete: true/false, assessment: true/false}]
   index = currentIndex
   index++
   if needsPractice
     if levels[currentIndex].practice or index < levels.length and levels[index].practice
-      # Needs practice, on practice or next practice, choose next incomplete level
+      # Needs practice, current level is practice or next is practice; return the next incomplete practice-or-normal level
       # May leave earlier practice levels incomplete and reach end of course
-      index++ while index < levels.length and levels[index].complete
+      index++ while index < levels.length and (levels[index].complete or levels[index].assessment)
     else
-      # Needs practice, on required, next required, choose first incomplete level of previous practice chain
+      # Needs practice, current level is required, next level is required; return the first incomplete level of previous practice chain
       index--
       index-- while index >= 0 and not levels[index].practice
       if index >= 0
@@ -509,12 +506,36 @@ findNextLevel = (levels, currentIndex, needsPractice) ->
           index++ while index < levels.length and levels[index].practice and levels[index].complete
           if levels[index].practice and not levels[index].complete
             return index
+      # Last set of practice levels is complete; return the next incomplete normal level instead.
       index = currentIndex + 1
-      index++ while index < levels.length and levels[index].complete
+      index++ while index < levels.length and levels[index].complete and not levels[index].assessment
   else
-    # No practice needed, next required incomplete level
-    index++ while index < levels.length and (levels[index].practice or levels[index].complete)
+    # No practice needed; return the next required incomplete level
+    index++ while index < levels.length and (levels[index].practice or levels[index].complete or levels[index].assessment)
   index
+
+findNextAssessmentForLevel = (levels, currentIndex, needsPractice) ->
+  # Find assessment level immediately after current level (and its practice levels)
+  # Only return assessment if it's the next level
+  # Skip over practice levels unless practice neeeded
+  # levels = [{practice: true/false, complete: true/false, assessment: true/false}]
+  # eg: l*,p,p,a*,a',l,...
+  # given index l*, return index a*
+  # given index a*, return index a'
+  index = currentIndex
+  index++
+  while index < levels.length
+    if levels[index].practice
+      return -1 if needsPractice and not levels[index].complete
+      index++ # It's a practice level but do not need practice, keep looking
+    else if levels[index].assessment
+      return -1 if levels[index].complete
+      return index
+    else if levels[index].complete # It's completed, keep looking
+      index++
+    else # we got to a normal level; we didn't find an assessment for the given level.
+      return -1
+  return -1 # we got to the end of the list and found nothing
 
 needsPractice = (playtime=0, threshold=5) ->
   playtime / 60 > threshold
@@ -626,9 +647,11 @@ usStateCodes =
     }
   )()
 
+emailRegex = /[A-z0-9._%+-]+@[A-z0-9.-]+\.[A-z]{2,63}/
+isValidEmail = (email) ->
+  emailRegex.test(email?.trim().toLowerCase())
 
 module.exports = {
-  aceEditModes
   capitalLanguages
   clone
   combineAncestralObject
@@ -639,6 +662,7 @@ module.exports = {
   extractPlayerCodeTag
   filterMarkdownCodeLanguages
   findNextLevel
+  findNextAssessmentForLevel
   formatDollarValue
   functionCreators
   getByPath
@@ -650,14 +674,14 @@ module.exports = {
   getQueryVariables
   getSponsoredSubsAmount
   getUTCDay
-  getYearSubscriptionGroup
   grayscale
   hexToHSL
   hslToHex
   i18n
-  initializeACE
   injectCSS
   isID
+  isRegionalSubscription
+  isSmokeTestEmail
   keepDoingUntil
   kindaEqual
   needsPractice
@@ -671,4 +695,7 @@ module.exports = {
   stripIndentation
   usStateCodes
   userAgent
+  petThangIDs
+  premiumContent
+  isValidEmail
 }

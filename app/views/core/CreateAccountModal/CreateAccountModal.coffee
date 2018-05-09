@@ -1,3 +1,4 @@
+require('app/styles/modal/create-account-modal/create-account-modal.sass')
 ModalView = require 'views/core/ModalView'
 AuthModal = require 'views/core/AuthModal'
 ChooseAccountTypeView = require './ChooseAccountTypeView'
@@ -8,13 +9,16 @@ SingleSignOnAlreadyExistsView = require './SingleSignOnAlreadyExistsView'
 SingleSignOnConfirmView = require './SingleSignOnConfirmView'
 ExtrasView = require './ExtrasView'
 ConfirmationView = require './ConfirmationView'
+TeacherSignupComponent = require './teacher/TeacherSignupComponent'
+TeacherSignupStoreModule = require './teacher/TeacherSignupStoreModule'
 State = require 'models/State'
 template = require 'templates/core/create-account-modal/create-account-modal'
 forms = require 'core/forms'
 User = require 'models/User'
-application  = require 'core/application'
 errors = require 'core/errors'
 utils = require 'core/utils'
+store = require('core/store')
+storage = require 'core/storage'
 
 ###
 CreateAccountModal is a wizard-style modal with several subviews, one for each
@@ -65,21 +69,36 @@ module.exports = class CreateAccountModal extends ModalView
       birthday: new Date('') # so that birthday.getTime() is NaN
       authModalInitialValues: {}
       accountCreated: false
+      signupForm: {
+        subscribe: ['on'] # checked by default
+      }
+      subModalContinue: options.subModalContinue
+      wantInSchool: false
     }
-    
-    { startOnPath } = options
-    if startOnPath is 'student'
-      @signupState.set({ path: 'student', screen: 'segment-check' })
-    if startOnPath is 'individual'
-      @signupState.set({ path: 'individual', screen: 'segment-check' })
+
+    { startOnPath} = options
+    switch startOnPath
+      when 'student' then @signupState.set({ path: 'student', screen: 'segment-check' })
+      when 'individual' then @signupState.set({ path: 'individual', screen: 'segment-check' })
+      when 'teacher' then @signupState.set({ path: 'teacher', screen: 'basic-info' })
+      else
+        if /^\/play/.test(location.pathname)
+          @signupState.set({ path: 'individual', screen: 'segment-check' })
+    if @signupState.get('screen') is 'segment-check' and not @segmentCheckRequiredInCountry()
+      @signupState.set screen: 'basic-info'
 
     @listenTo @signupState, 'all', _.debounce @render
 
     @listenTo @insertSubView(new ChooseAccountTypeView()),
       'choose-path': (path) ->
         if path is 'teacher'
-          application.router.navigate('/teachers/signup', trigger: true)
+          window.tracker?.trackEvent 'Teachers Create Account Loaded', category: 'Teachers' # This is a legacy event name
+          @signupState.set { path, screen: 'basic-info' }
         else
+          if path is 'student'
+            window.tracker?.trackEvent 'CreateAccountModal Student Path Clicked', category: 'Students'
+          if path is 'individual'
+            window.tracker?.trackEvent 'CreateAccountModal Individual Path Clicked', category: 'Individuals'
           @signupState.set { path, screen: 'segment-check' }
 
     @listenTo @insertSubView(new SegmentCheckView({ @signupState })),
@@ -93,10 +112,22 @@ module.exports = class CreateAccountModal extends ModalView
     @listenTo @insertSubView(new BasicInfoView({ @signupState })),
       'sso-connect:already-in-use': -> @signupState.set { screen: 'sso-already-exists' }
       'sso-connect:new-user': -> @signupState.set {screen: 'sso-confirm'}
-      'nav-back': -> @signupState.set { screen: 'segment-check' }
+      'nav-back': ->
+        if @signupState.get('path') is 'teacher'
+          @signupState.set { screen: 'choose-account-type' }
+        else
+          @signupState.set { screen: 'segment-check' }
       'signup': ->
         if @signupState.get('path') is 'student'
           @signupState.set { screen: 'extras', accountCreated: true }
+        else if @signupState.get('path') is 'teacher'
+          store.commit('modal/updateSso', _.pick(@signupState.attributes, 'ssoUsed', 'ssoAttrs'))
+          store.commit('modal/updateSignupForm', @signupState.get('signupForm'))
+          store.commit('modal/updateTrialRequestProperties', _.pick(@signupState.get('signupForm'), 'firstName', 'lastName'))
+          @signupState.set { screen: 'teacher-signup-component' }
+        else if @signupState.get('subModalContinue')
+          storage.save('sub-modal-continue', @signupState.get('subModalContinue'))
+          window.location.reload()
         else
           @signupState.set { screen: 'confirmation', accountCreated: true }
 
@@ -108,9 +139,16 @@ module.exports = class CreateAccountModal extends ModalView
       'signup': ->
         if @signupState.get('path') is 'student'
           @signupState.set { screen: 'extras', accountCreated: true }
+        else if @signupState.get('path') is 'teacher'
+          store.commit('modal/updateSso', _.pick(@signupState.attributes, 'ssoUsed', 'ssoAttrs'))
+          store.commit('modal/updateSignupForm', @signupState.get('signupForm'))
+          @signupState.set { screen: 'teacher-signup-component' }
+        else if @signupState.get('subModalContinue')
+          storage.save('sub-modal-continue', @signupState.get('subModalContinue'))
+          window.location.reload()
         else
           @signupState.set { screen: 'confirmation', accountCreated: true }
-        
+
     @listenTo @insertSubView(new ExtrasView({ @signupState })),
       'nav-forward': -> @signupState.set { screen: 'confirmation' }
 
@@ -119,7 +157,7 @@ module.exports = class CreateAccountModal extends ModalView
     # TODO: Switch to promises and state, rather than using defer to hackily enable buttons after render
     application.facebookHandler.loadAPI({ success: => @signupState.set { facebookEnabled: true } unless @destroyed })
     application.gplusHandler.loadAPI({ success: => @signupState.set { gplusEnabled: true } unless @destroyed })
-    
+
     @once 'hidden', ->
       if @signupState.get('accountCreated') and not application.testing
         # ensure logged in state propagates through the entire app
@@ -128,6 +166,35 @@ module.exports = class CreateAccountModal extends ModalView
         else if me.isTeacher()
           application.router.navigate('/teachers/classes', {trigger: true})
         window.location.reload()
-  
+
+    store.registerModule('modal', TeacherSignupStoreModule)
+
+  afterRender: ->
+    target = @$el.find('#teacher-signup-component')
+    return unless target[0]
+    if @teacherSignupComponent
+      target.replaceWith(@teacherSignupComponent.$el)
+    else
+      @teacherSignupComponent = new TeacherSignupComponent({
+        el: target[0]
+        store
+      })
+      @teacherSignupComponent.$on 'back', =>
+        if @signupState.get('ssoUsed')
+          @signupState.set('screen', 'sso-confirm')
+        else
+          @signupState.set('screen', 'basic-info')
+
+  destroy: ->
+    if @teacherSignupComponent
+      @teacherSignupComponent.$destroy()
+    try
+      store.unregisterModule('modal')
+
   onClickLoginLink: ->
-    @openModalView(new AuthModal({ initialValues: @signupState.get('authModalInitialValues') }))
+    @openModalView(new AuthModal({ initialValues: @signupState.get('authModalInitialValues'), subModalContinue: @signupState.get('subModalContinue') }))
+
+  segmentCheckRequiredInCountry: ->
+    return true unless me.get('country')
+    return true if me.get('country') in ['united-states', 'austria', 'belgium', 'bulgaria', 'croatia', 'cyprus', 'czech-republic', 'denmark', 'estonia', 'finland', 'france', 'germany', 'greece', 'hungary', 'ireland', 'italy', 'latvia', 'lithuania', 'luxembourg', 'malta', 'netherlands', 'poland', 'portugal', 'romania', 'slovakia', 'slovenia', 'spain', 'sweden', 'united-kingdom']
+    return false

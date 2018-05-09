@@ -1,3 +1,4 @@
+require('app/styles/play/spectate.sass')
 RootView = require 'views/core/RootView'
 template = require 'templates/play/spectate'
 {me} = require 'core/auth'
@@ -18,6 +19,7 @@ LevelComponent = require 'models/LevelComponent'
 Article = require 'models/Article'
 Camera = require 'lib/surface/Camera'
 AudioPlayer = require 'lib/AudioPlayer'
+createjs = require 'lib/createjs-parts'
 
 # subviews
 LoadingView = require './level/LevelLoadingView'
@@ -32,7 +34,7 @@ DuelStatsView = require './level/DuelStatsView'
 VictoryModal = require './level/modal/VictoryModal'
 InfiniteLoopModal = require './level/modal/InfiniteLoopModal'
 
-require 'game-libraries'
+require 'lib/game-libraries'
 
 PROFILE_ME = false
 
@@ -43,7 +45,7 @@ module.exports = class SpectateLevelView extends RootView
   isEditorPreview: false
 
   subscriptions:
-    'level:set-volume': (e) -> createjs.Sound.setVolume(if e.volume is 1 then 0.6 else e.volume)  # Quieter for now until individual sound FX controls work again.
+    'level:set-volume': (e) -> createjs.Sound.volume = if e.volume is 1 then 0.6 else e.volume  # Quieter for now until individual sound FX controls work again.
     'god:new-world-created': 'onNewWorld'
     'god:streaming-world-updated': 'onNewWorld'
     'god:infinite-loop': 'onInfiniteLoop'
@@ -55,8 +57,8 @@ module.exports = class SpectateLevelView extends RootView
     console.profile?() if PROFILE_ME
     super options
 
-    @sessionOne = @getQueryVariable 'session-one'
-    @sessionTwo = @getQueryVariable 'session-two'
+    @sessionOne = utils.getQueryVariable 'session-one'
+    @sessionTwo = utils.getQueryVariable 'session-two'
     if options.spectateSessions
       @sessionOne = options.spectateSessions.sessionOne
       @sessionTwo = options.spectateSessions.sessionTwo
@@ -85,7 +87,7 @@ module.exports = class SpectateLevelView extends RootView
       sessionID: @sessionOne
       opponentSessionID: @sessionTwo
       spectateMode: true
-      team: @getQueryVariable('team')
+      team: utils.getQueryVariable('team')
     @god = new God maxAngels: 1, spectate: true
 
   getRenderData: ->
@@ -178,9 +180,10 @@ module.exports = class SpectateLevelView extends RootView
     @insertSubView @tome = new TomeView levelID: @levelID, session: @session, otherSession: @otherSession, thangs: @world.thangs, supermodel: @supermodel, spectateView: true, spectateOpponentCodeLanguage: @otherSession?.get('submittedCodeLanguage'), level: @level, god: @god
     @insertSubView new PlaybackView session: @session, level: @level
 
-    @insertSubView new GoldView {}
+    goldInDuelStatsView = @level.get('slug') in ['wakka-maul', 'cross-bones']
+    @insertSubView new GoldView {} unless goldInDuelStatsView
     @insertSubView new HUDView {level: @level}
-    @insertSubView new DuelStatsView level: @level, session: @session, otherSession: @otherSession, supermodel: @supermodel, thangs: @world.thangs if @level.isType('hero-ladder', 'course-ladder')
+    @insertSubView new DuelStatsView level: @level, session: @session, otherSession: @otherSession, supermodel: @supermodel, thangs: @world.thangs, showsGold: goldInDuelStatsView if @level.isType('hero-ladder', 'course-ladder')
     @insertSubView @controlBar = new ControlBarView {worldName: utils.i18n(@level.attributes, 'name'), session: @session, level: @level, supermodel: @supermodel, spectateGame: true}
 
   # callbacks
@@ -200,7 +203,7 @@ module.exports = class SpectateLevelView extends RootView
     bounds = [{x:worldBounds.left, y:worldBounds.top}, {x:worldBounds.right, y:worldBounds.bottom}]
     @surface.camera.setBounds(bounds)
     zoom = =>
-      @surface.camera.zoomTo({x: (worldBounds.right - worldBounds.left) / 2, y: (worldBounds.top - worldBounds.bottom) / 2}, 0.1, 0)
+      @surface?.camera.zoomTo({x: (worldBounds.right - worldBounds.left) / 2, y: (worldBounds.top - worldBounds.bottom) / 2}, 0.1, 0)
     _.delay zoom, 4000  # call it later for some reason (TODO: figure this out)
 
   findPlayerNames: ->
@@ -216,7 +219,7 @@ module.exports = class SpectateLevelView extends RootView
   initScriptManager: ->
     if @world.scripts
       nonVictoryPlaybackScripts = _.reject @world.scripts, (script) ->
-        script.id.indexOf('Set Camera Boundaries') is -1
+        not /(Set Camera Boundaries|Introduction)/.test script.id
     else
       console.log 'World scripts don\'t exist!'
       nonVictoryPlaybackScripts = []
@@ -256,7 +259,7 @@ module.exports = class SpectateLevelView extends RootView
     startFrame = @lastWorldFramesLoaded ? 0
     if @world.frames.length is @world.totalFrames  # Finished loading
       @lastWorldFramesLoaded = 0
-      unless @getQueryVariable('autoplay') is false
+      unless utils.getQueryVariable('autoplay') is false
         Backbone.Mediator.publish 'level:set-playing', playing: true  # Since we paused at first, now we autostart playback.
     else
       @lastWorldFramesLoaded = @world.frames.length
@@ -272,7 +275,7 @@ module.exports = class SpectateLevelView extends RootView
       @sessionOne = data[0]._id
       @sessionTwo = data[1]._id
       url = "/play/spectate/#{@levelID}?session-one=#{@sessionOne}&session-two=#{@sessionTwo}"
-      if leagueID = @getQueryVariable 'league'
+      if leagueID = utils.getQueryVariable 'league'
         url += "&league=" + leagueID
       Backbone.Mediator.publish 'router:navigate', {
         route: url,
@@ -290,6 +293,8 @@ module.exports = class SpectateLevelView extends RootView
   fetchRandomSessionPair: (cb) ->
     console.log 'Fetching random session pair!'
     randomSessionPairURL = "/db/level/#{@levelID}/random_session_pair"
+    if leagueID = utils.getQueryVariable 'league'
+      randomSessionPairURL += "?league=" + leagueID
     $.ajax
       url: randomSessionPairURL
       type: 'GET'

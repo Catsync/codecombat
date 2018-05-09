@@ -15,16 +15,16 @@ module.exports = class SimulateTabView extends CocoView
     @simulatorsLeaderboardData = new SimulatorsLeaderboardData(me)
     @simulatorsLeaderboardDataRes = @supermodel.addModelResource(@simulatorsLeaderboardData, 'top_simulators', {cache: false})
     @simulatorsLeaderboardDataRes.load()
-    require 'vendor/aether-javascript'
-    require 'vendor/aether-python'
-    require 'vendor/aether-coffeescript'
-    require 'vendor/aether-lua'
-    require 'vendor/aether-java'
+    require 'bower_components/aether/build/javascript'
+    require 'bower_components/aether/build/python'
+    require 'bower_components/aether/build/coffeescript'
+    require 'bower_components/aether/build/lua'
+    require 'bower_components/aether/build/java'
 
   onLoaded: ->
     super()
     @render()
-    if (document.location.hash is '#simulate' or @options.level.isType('course-ladder')) and not @simulator
+    if not @simulator and (document.location.hash is '#simulate' or @options.level.get('slug') not in ['ace-of-coders', 'zero-sum'])
       @startSimulating()
 
   afterRender: ->

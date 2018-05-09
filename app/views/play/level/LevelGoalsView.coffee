@@ -1,11 +1,14 @@
+require('app/styles/play/level/goals.sass')
 CocoView = require 'views/core/CocoView'
 template = require 'templates/play/level/goals'
 {me} = require 'core/auth'
 utils = require 'core/utils'
+LevelSession = require 'models/LevelSession'
+Level = require 'models/Level'
+LevelConstants = require 'lib/LevelConstants'
+LevelGoals = require('./LevelGoals').default
+store = require 'core/store'
 
-stateIconMap =
-  success: 'glyphicon-ok'
-  failure: 'glyphicon-remove'
 
 module.exports = class LevelGoalsView extends CocoView
   id: 'goals-view'
@@ -33,45 +36,23 @@ module.exports = class LevelGoalsView extends CocoView
   constructor: (options) ->
     super options
     @level = options.level
+    
+  afterRender: ->
+    @levelGoalsComponent = new LevelGoals({
+      el: @$('.goals-component')[0],
+      store
+      propsData: { showStatus: true }
+    })
 
   onNewGoalStates: (e) ->
+    _.assign(@levelGoalsComponent, _.pick(e, 'overallStatus', 'timedOut', 'goals', 'goalStates'))
+    @levelGoalsComponent.casting = false
+
     firstRun = not @previousGoalStatus?
     @previousGoalStatus ?= {}
-    @$el.find('.goal-status').addClass 'secret'
-    classToShow = null
-    classToShow = 'success' if e.overallStatus is 'success'
-    classToShow = 'failure' if e.overallStatus is 'failure'
-    classToShow ?= 'timed-out' if e.timedOut
-    classToShow ?= 'incomplete'
-    @$el.find('.goal-status.'+classToShow).removeClass 'secret'
-    list = $('#primary-goals-list', @$el)
-    list.empty()
-    goals = []
+    @succeeded = e.overallStatus is 'success'
     for goal in e.goals
       state = e.goalStates[goal.id]
-      continue if goal.optional and @level.isType('course') and state.status isnt 'success'
-      if goal.hiddenGoal
-        continue if goal.optional and state.status isnt 'success'
-        continue if not goal.optional and state.status isnt 'failure'
-      continue if goal.team and me.team isnt goal.team
-      text = utils.i18n goal, 'name'
-      if state.killed
-        dead = _.filter(_.values(state.killed)).length
-        targeted = _.values(state.killed).length
-        if targeted > 1
-          # Does this make sense?
-          if goal.isPositive
-            completed = dead
-          else
-            completed = targeted - dead
-          text = text + " (#{completed}/#{targeted})"
-      # This should really get refactored, along with GoalManager, so that goals have a standard
-      # representation of how many are done, how many are needed, what that means, etc.
-      li = $('<li></li>').addClass("status-#{state.status}").text(text)
-      iconClass = stateIconMap[state.status]
-      li.prepend($('<i></i>').addClass("glyphicon #{iconClass or ''}"))  # If empty, insert a .glyphicon to take up space
-      list.append(li)
-      goals.push goal
       if not firstRun and state.status is 'success' and @previousGoalStatus[goal.id] isnt 'success'
         @soundToPlayWhenPlaybackEnded = 'goal-success'
       else if not firstRun and state.status isnt 'success' and @previousGoalStatus[goal.id] is 'success'
@@ -79,15 +60,14 @@ module.exports = class LevelGoalsView extends CocoView
       else
         @soundToPlayWhenPlaybackEnded = null
       @previousGoalStatus[goal.id] = state.status
-    if goals.length > 0 and @$el.hasClass 'secret'
+    if e.goals.length > 0 and @$el.hasClass 'secret'
       @$el.removeClass('secret')
       @lastSizeTweenTime = new Date()
     @updatePlacement()
 
   onTomeCast: (e) ->
     return if e.preload
-    @$el.find('.goal-status').addClass('secret')
-    @$el.find('.goal-status.running').removeClass('secret')
+    @levelGoalsComponent.casting = true
 
   onSetPlaying: (e) ->
     return unless e.playing

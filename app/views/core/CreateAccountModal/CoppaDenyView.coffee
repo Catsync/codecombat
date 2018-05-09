@@ -1,3 +1,4 @@
+require('app/styles/modal/create-account-modal/coppa-deny-view.sass')
 CocoView = require 'views/core/CocoView'
 State = require 'models/State'
 template = require 'templates/core/create-account-modal/coppa-deny-view'
@@ -18,11 +19,17 @@ module.exports = class CoppaDenyView extends CocoView
     @listenTo @state, 'all', _.debounce(@render)
     
   onChangeParentEmail: (e) ->
-    @state.set { parentEmail: $(e.currentTarget).val() }, { silent: true }
+    parentEmail = $(e.currentTarget).val()
+    @state.set { parentEmail }, { silent: true }
+    if /team@codecombat.com/i.test(parentEmail)
+      @state.set { dontUseOurEmailSilly: true }
+    else
+      @state.set { dontUseOurEmailSilly: false, silent: true }
 
   onClickSendParentEmailButton: (e) ->
     e.preventDefault()
     @state.set({ parentEmailSending: true })
+    window.tracker?.trackEvent 'CreateAccountModal Student CoppaDenyView Send Clicked', category: 'Students'
     contact.sendParentSignupInstructions(@state.get('parentEmail'))
       .then =>
         @state.set({ error: false, parentEmailSent: true, parentEmailSending: false })
@@ -30,4 +37,6 @@ module.exports = class CoppaDenyView extends CocoView
         @state.set({ error: true, parentEmailSent: false, parentEmailSending: false })
 
   onClickBackButton: ->
+    if @signupState.get('path') is 'student'
+      window.tracker?.trackEvent 'CreateAccountModal Student CoppaDenyView Back Clicked', category: 'Students'
     @trigger 'nav-back'

@@ -5,6 +5,7 @@ God = require 'lib/God'
 GoalManager = require 'lib/world/GoalManager'
 LevelLoader = require 'lib/LevelLoader'
 utils = require 'core/utils'
+aetherUtils = require 'lib/aether_utils'
 
 module.exports = class VerifierTest extends CocoClass
   constructor: (@levelID, @updateCallback, @supermodel, @language, @options) ->
@@ -16,7 +17,7 @@ module.exports = class VerifierTest extends CocoClass
     if utils.getQueryVariable('dev') or @options.devMode
       @supermodel.shouldSaveBackups = (model) ->  # Make sure to load possibly changed things from localStorage.
         model.constructor.className in ['Level', 'LevelComponent', 'LevelSystem', 'ThangType']
-
+    @solution = @options.solution
     @language ?= 'python'
     @userCodeProblems = []
     @load()
@@ -43,7 +44,8 @@ module.exports = class VerifierTest extends CocoClass
 
   configureSession: (session, level) =>
     try
-      session.solution = _.find level.getSolutions(), language: session.get('codeLanguage')
+      session.solution = _.filter(level.getSolutions(), language: session.get('codeLanguage'))[@options.solutionIndex]
+      session.solution ?= @solution
       session.set 'heroConfig', session.solution.heroConfig
       session.set 'code', {'hero-placeholder': plan: session.solution.source}
       state = session.get 'state'
@@ -59,7 +61,7 @@ module.exports = class VerifierTest extends CocoClass
     @world = @levelLoader.world
     @level = @levelLoader.level
     @session = @levelLoader.session
-    @solution = @levelLoader.session.solution
+    @solution ?= @levelLoader.session.solution
 
   setupGod: ->
     @god.setLevel @level.serialize {@supermodel, @session, otherSession: null, headless: true, sessionless: false}
@@ -78,7 +80,7 @@ module.exports = class VerifierTest extends CocoClass
     @listenToOnce @god, 'infinite-loop', @fail
     @listenToOnce @god, 'user-code-problem', @onUserCodeProblem
     @listenToOnce @god, 'goals-calculated', @processSingleGameResults
-    @god.createWorld @session.generateSpellsObject()
+    @god.createWorld {spells: aetherUtils.generateSpellsObject {levelSession: @session}}
     @state = 'running'
     @reportResults()
 

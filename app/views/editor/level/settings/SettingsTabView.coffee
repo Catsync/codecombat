@@ -1,3 +1,4 @@
+require('app/styles/editor/level/settings_tab.sass')
 CocoView = require 'views/core/CocoView'
 template = require 'templates/editor/level/settings_tab'
 Level = require 'models/Level'
@@ -5,7 +6,7 @@ ThangType = require 'models/ThangType'
 Surface = require 'lib/surface/Surface'
 nodes = require './../treema_nodes'
 {me} = require 'core/auth'
-require 'vendor/treema'
+require 'lib/setupTreema'
 concepts = require 'schemas/concepts'
 
 module.exports = class SettingsTabView extends CocoView
@@ -17,9 +18,10 @@ module.exports = class SettingsTabView extends CocoView
   editableSettings: [
     'name', 'description', 'documentation', 'nextLevel', 'victory', 'i18n', 'goals',
     'type', 'kind', 'terrain', 'banner', 'loadingTip', 'requiresSubscription', 'adventurer', 'adminOnly',
-    'helpVideos', 'replayable', 'scoreTypes', 'concepts', 'primaryConcepts', 'picoCTFProblem', 'practice', 'practiceThresholdMinutes'
-    'primerLanguage', 'shareable', 'studentPlayInstructions', 'requiredCode', 'suspectCode',
-    'requiredGear', 'restrictedGear', 'requiredProperties', 'restrictedProperties', 'recommendedHealth', 'allowedHeroes'
+    'helpVideos', 'replayable', 'scoreTypes', 'concepts', 'primaryConcepts', 'picoCTFProblem', 'practice', 'assessment',
+    'practiceThresholdMinutes', 'primerLanguage', 'shareable', 'studentPlayInstructions', 'requiredCode', 'suspectCode',
+    'requiredGear', 'restrictedGear', 'requiredProperties', 'restrictedProperties', 'recommendedHealth', 'allowedHeroes',
+    'assessmentPlacement'
   ]
 
   subscriptions:
@@ -148,14 +150,14 @@ class ConceptNode extends TreemaNode.nodeMap.string
     @$el.append($("<span class='treema-description'>#{description}</span>").show())
 
   limitChoices: (options) ->
-    if @parent.keyForParent is 'concepts'
+    if @parent.keyForParent is 'concepts' and (not this.parent.parent)
       options = (o for o in options when _.find(concepts, (c) -> c.concept is o and not c.automatic and not c.deprecated))  # Allow manual, not automatic
     else
       options = (o for o in options when _.find(concepts, (c) -> c.concept is o and not c.deprecated))  # Allow both
     super options
 
   onClick: (e) ->
-    return if @$el.hasClass('concept-automatic')  # Don't allow editing of automatic concepts
+    return if this.parent.keyForParent is 'concepts' and (not this.parent.parent) and @$el.hasClass('concept-automatic')  # Don't allow editing of automatic concepts
     super e
 
 class ConceptsListNode extends TreemaNode.nodeMap.array

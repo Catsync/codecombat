@@ -5,7 +5,8 @@ Patches = require 'collections/Patches'
 PatchModal = require 'views/editor/PatchModal'
 template = require 'templates/i18n/i18n-edit-model-view'
 deltasLib = require 'core/deltas'
-ace = require 'ace'
+modelDeltas = require 'lib/modelDeltas'
+ace = require('lib/aceContainer')
 
 ###
   This view is the superclass for all views which Diplomats use to submit translations
@@ -13,7 +14,7 @@ ace = require 'ace'
   `@modelClass` which is a patchable Backbone model class, and they use `@wrapRow()`
   to dynamically specify which properties are being translated.
 ###
-  
+
 UNSAVED_CHANGES_MESSAGE = 'You have unsaved changes! Really discard them?'
 
 module.exports = class I18NEditModelView extends RootView
@@ -101,14 +102,10 @@ module.exports = class I18NEditModelView extends RootView
     @onTranslationChanged(rowInfo, value)
 
   wrapRow: (title, key, enValue, toValue, path, format) ->
-    @translationList.push {
-      title: title,
-      key: key,
-      enValue: enValue,
-      toValue: toValue or '',
-      path: path
-      format: format
-    }
+    return unless enValue
+    toValue ||= ''
+    doNotTranslate = enValue.match /(['"`][^\s`]+['"`])/gi
+    @translationList.push {title, doNotTranslate, key, enValue, toValue, path, format}
 
   buildTranslationList: -> [] # overwrite
 
@@ -143,6 +140,11 @@ module.exports = class I18NEditModelView extends RootView
     @$el.find('#patch-submit').attr('disabled', null)
     @madeChanges = true
 
+    #- Update whether we are missing an identifier we thought we should still be there
+    @$("*[data-index=#{rowInfo.index}]").parents('table').find('.doNotTranslate code').each (index, el) ->
+      identifier = $(el).text()
+      $(el).toggleClass 'missing-identifier', value and value.indexOf(identifier) is -1
+
   onLanguageSelectChanged: (e) ->
     return if @ignoreLanguageSelectChanges
     if @madeChanges
@@ -166,7 +168,7 @@ module.exports = class I18NEditModelView extends RootView
       return UNSAVED_CHANGES_MESSAGE
 
   onSubmitPatch: (e) ->
-    delta = @originalModel.getDeltaWith(@model)
+    delta = modelDeltas.getDeltaWith(@originalModel, @model)
     flattened = deltasLib.flattenDelta(delta)
     collection = _.string.underscored @model.constructor.className
     patch = new Patch({
@@ -191,4 +193,3 @@ module.exports = class I18NEditModelView extends RootView
     .catch =>
       button.text('Error Submitting Changes')
       @$el.find('#patch-submit').attr('disabled', null)
-        

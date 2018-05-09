@@ -50,6 +50,8 @@ require('../server/common'); // Make sure global testing functions are set up
 // Ignore Stripe/Nocking erroring
 console.error = function() {
   try {
+    if(arguments[1].type === 'StripeInvalidRequest')
+      return;
     if(arguments[1].stack.indexOf('An error occurred with our connection to Stripe') > -1)
       return;
   }
@@ -66,8 +68,22 @@ if (process.argv.indexOf('--with-test-names') > -1) {
   })
 }
 
+// TODO: Share this between client and server tests
+customMatchers = {
+  toDeepEqual: function (util, customEqualityTesters) {
+    return {
+      compare: function (actual, expected) {
+        pass = _.isEqual(actual, expected)
+        message = `Expected ${JSON.stringify(actual, null, '\t')} to DEEP EQUAL ${JSON.stringify(expected, null, '\t')}`
+        return {pass, message}
+      }
+    }
+  }
+}
+
 var initialized = false;
 beforeEach(function(done) {
+  jasmine.addMatchers(customMatchers);
   if (initialized) {
     return done();
   }

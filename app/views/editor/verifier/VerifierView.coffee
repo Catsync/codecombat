@@ -1,3 +1,5 @@
+require('app/styles/editor/verifier/verifier-view.sass')
+async = require('vendor/scripts/async.js')
 utils = require 'core/utils'
 
 RootView = require 'views/core/RootView'
@@ -41,7 +43,7 @@ module.exports = class VerifierView extends RootView
       @supermodel.trackRequest @campaigns.fetch(data: {project: 'slug,type,levels'})
       @campaigns.comparator = (m) ->
         ['intro', 'course-2', 'course-3', 'course-4', 'course-5', 'course-6', 'course-8',
-         'dungeon', 'forest', 'desert', 'mountain', 'glacier', 'volcano'].indexOf(m.get('slug'))
+         'dungeon', 'forest', 'desert', 'mountain', 'glacier', 'volcano', 'campaign-game-dev-1', 'campaign-game-dev-2', 'campaign-game-dev-3'].indexOf(m.get('slug'))
 
   onLoaded: ->
     super()
@@ -52,10 +54,10 @@ module.exports = class VerifierView extends RootView
 
   filterCampaigns: ->
     @levelsByCampaign = {}
-    for campaign in @campaigns.models when campaign.get('type') in ['course', 'hero'] and campaign.get('slug') isnt 'picoctf'
+    for campaign in @campaigns.models when campaign.get('type') in ['course', 'hero'] and campaign.get('slug') not in ['picoctf', 'game-dev-1', 'game-dev-2', 'game-dev-3', 'web-dev-1', 'web-dev-2', 'web-dev-3', 'campaign-web-dev-1', 'campaign-web-dev-2', 'campaign-web-dev-3']
       @levelsByCampaign[campaign.get('slug')] ?= {levels: [], checked: campaign.get('slug') in ['intro']}
       campaignInfo = @levelsByCampaign[campaign.get('slug')]
-      for levelID, level of campaign.get('levels') when level.type not in ['hero-ladder', 'course-ladder', 'game-dev', 'web-dev']  # Would use isType, but it's not a Level model
+      for levelID, level of campaign.get('levels') when level.type not in ['hero-ladder', 'course-ladder', 'web-dev']  # Would use isType, but it's not a Level model
         campaignInfo.levels.push level.slug
 
   filterCodeLanguages: ->
@@ -105,9 +107,12 @@ module.exports = class VerifierView extends RootView
     @tasksList = []
     for levelID in @levelIDs
       level = @supermodel.getModel(Level, levelID)
-      solutions = level?.getSolutions()
       for codeLanguage in @testLanguages
-        if not solutions or _.find(solutions, language: codeLanguage)
+        solutions = _.filter level?.getSolutions() ? [], language: codeLanguage
+        if solutions.length
+          for solution, solutionIndex in solutions
+            @tasksList.push level: levelID, language: codeLanguage, solutionIndex: solutionIndex
+        else
           @tasksList.push level: levelID, language: codeLanguage
 
     @testCount = @tasksList.length
@@ -138,7 +143,7 @@ module.exports = class VerifierView extends RootView
                 ++@problem
 
               next()
-          , chunkSupermodel, task.language, {}
+          , chunkSupermodel, task.language, {solutionIndex: task.solutionIndex}
           @tests.unshift test
           @render()
         , => @render()

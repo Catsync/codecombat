@@ -47,6 +47,8 @@ module.exports = class God extends CocoClass
       angelCount = options.maxAngels
     else if window.application.isIPadApp
       angelCount = 1
+    else if @indefiniteLength  # Don't do much with angels in game-dev, will mostly be synchronous
+      angelCount = 1
     else
       angelCount = 2
 
@@ -73,15 +75,15 @@ module.exports = class God extends CocoClass
     @lastFixedSeed = e.fixedSeed
     @lastFlagHistory = (flag for flag in e.flagHistory when flag.source isnt 'code')
     @lastDifficulty = e.difficulty
-    @createWorld e.spells, e.preload, e.realTime, e.justBegin
+    @createWorld e
 
-  createWorld: (spells, preload, realTime, justBegin) ->
+  createWorld: ({spells, preload, realTime, justBegin, keyValueDb, synchronous}) ->
     console.log "#{@nick}: Let there be light upon #{@level.name}! (preload: #{preload})"
     userCodeMap = @getUserCodeMap spells
 
     # We only want one world being simulated, so we abort other angels, unless we had one preloading this very code.
     hadPreloader = false
-    for angel in @angelsShare.busyAngels
+    for angel in @angelsShare.busyAngels.slice()
       isPreloading = angel.running and angel.work.preload and _.isEqual angel.work.userCodeMap, userCodeMap, (a, b) ->
         return a.raw is b.raw if a?.raw? and b?.raw?
         undefined  # Let default equality test suffice.
@@ -107,10 +109,12 @@ module.exports = class God extends CocoClass
       goals: @angelsShare.goalManager?.getGoals()
       headless: @angelsShare.headless
       preload
-      synchronous: not Worker?  # Profiling world simulation is easier on main thread, or we are IE9.
+      synchronous: synchronous ? not Worker?  # Profiling world simulation is easier on main thread, or we are IE9.
       realTime
       justBegin
       indefiniteLength: @indefiniteLength and realTime
+      keyValueDb
+      language: me.get('preferredLanguage', true)  # TODO: get target user's language if we're simulating some other user's session?
     }
     @angelsShare.workQueue.push work
     angel.workIfIdle() for angel in @angelsShare.angels

@@ -1,65 +1,7 @@
 ContributeClassView = require './ContributeClassView'
 template = require 'templates/contribute/diplomat'
 {me} = require 'core/auth'
-
-require("locale/en")
-require("locale/en-US")
-require("locale/en-GB")
-require("locale/ru")
-require("locale/de-DE")
-require("locale/de-AT")
-require("locale/de-CH")
-require("locale/es-419")
-require("locale/es-ES")
-require("locale/zh-HANS")
-require("locale/zh-HANT")
-require("locale/zh-WUU-HANS")
-require("locale/zh-WUU-HANT")
-require("locale/fr")
-require("locale/ja")
-require("locale/ar")
-require("locale/pt-BR")
-require("locale/pt-PT")
-require("locale/pl")
-require("locale/it")
-require("locale/tr")
-require("locale/nl")
-require("locale/nl-BE")
-require("locale/nl-NL")
-require("locale/fa")
-require("locale/cs")
-require("locale/sv")
-require("locale/id")
-require("locale/el")
-require("locale/ro")
-require("locale/vi")
-require("locale/hu")
-require("locale/th")
-require("locale/da")
-require("locale/ko")
-require("locale/sk")
-require("locale/sl")
-require("locale/fi")
-require("locale/bg")
-require("locale/nb")
-require("locale/nn")
-require("locale/he")
-require("locale/lt")
-require("locale/sr")
-require("locale/uk")
-require("locale/hi")
-require("locale/ur")
-require("locale/ms")
-require("locale/ca")
-require("locale/gl")
-require("locale/mk-MK")
-require("locale/eo")
-require("locale/uz")
-require("locale/my")
-require("locale/et")
-require("locale/hr")
-require("locale/mi")
-require("locale/haw")
+locale = require 'locale/locale'
 
 module.exports = class DiplomatView extends ContributeClassView
   id: 'diplomat-view'
@@ -67,21 +9,32 @@ module.exports = class DiplomatView extends ContributeClassView
 
   initialize: ->
     @contributorClassName = 'diplomat'
-
-  calculateSpokenLanguageStats: ->
-    @locale ?= require 'locale/locale'
-    totalStrings = @countStrings @locale.en
-    languageStats = {}
-    for languageCode, language of @locale
-      continue if languageCode is 'update'
-      languageStats[languageCode] =
+    promises = []
+    @languageStats = {}
+    Object.keys(locale).forEach (languageCode) =>
+      console.log "processing #{languageCode}"
+      language = locale[languageCode]
+      @languageStats[languageCode] = {
         githubURL: "https://github.com/codecombat/codecombat/blob/master/app/locale/#{languageCode}.coffee"
-        completion: @countStrings(language) / totalStrings
         nativeDescription: language.nativeDescription
         englishDescription: language.englishDescription
         diplomats: @diplomats[languageCode]
+        nativeDescription: language.nativeDescription
+        englishDescription: language.englishDescription
         languageCode: languageCode
-    languageStats
+        loading: true
+      }
+      promises.push locale.load(languageCode).then =>
+        _.assign @languageStats[languageCode], @calculateSpokenLanguageStats(languageCode, locale[languageCode])
+        @languageStats[languageCode].loading = false
+        @render()
+        console.log "Loaded #{languageCode}"
+
+  calculateSpokenLanguageStats: (languageCode, language) ->
+    totalStrings = @countStrings locale.en
+    return {
+      completion: @countStrings(language) / totalStrings
+    }
 
   countStrings: (language) ->
     translated = 0
@@ -93,8 +46,8 @@ module.exports = class DiplomatView extends ContributeClassView
     en: []             # English - English
     'en-US': []        # English (US), English (US)
     'en-GB': []        # English (UK), English (UK)
-    ru: ['EagleTA', 'ImmortalJoker', 'Mr A', 'Shpionus', 'a1ip', 'fess89', 'iulianR', 'kerradus', 'kisik21', 'nixel', 'ser-storchak']             # русский язык, Russian
-    'de-DE': ['Anon', 'Dirk', 'HiroP0', 'bahuma20', 'bkimminich', 'djsmith85', 'dkundel', 'domenukk', 'faabsen', 'Zeldaretter']        # Deutsch (Deutschland), German (Germany)
+    ru: ['EagleTA', 'ImmortalJoker', 'Mr A', 'Shpionus', 'a1ip', 'fess89', 'iulianR', 'kerradus', 'kisik21', 'nixel', 'ser-storchak', 'CatSkald']             # русский язык, Russian
+    'de-DE': ['Anon', 'Dirk', 'HiroP0', 'bahuma20', 'bkimminich', 'djsmith85', 'dkundel', 'domenukk', 'faabsen', 'Zeldaretter', 'joca16']        # Deutsch (Deutschland), German (Germany)
     'de-AT': ['djsmith85']        # Deutsch (Österreich), German (Austria)
     'de-CH': ['greyhusky']        # Deutsch (Schweiz), German (Switzerland)
     'es-419': ['2xG', 'Federico Tomas', 'Jesús Ruppel', 'Mariano Luzza', 'Matthew Burt']       # español (América Latina), Spanish (Latin America)
@@ -103,13 +56,13 @@ module.exports = class DiplomatView extends ContributeClassView
     'zh-HANT': ['Adam23', 'gintau', 'shuwn']      # 繁體中文, Chinese (Traditional)
     'zh-WUU-HANS': []  # 吴语, Wuu (Simplified)
     'zh-WUU-HANT': ['benojan']  # 吳語, Wuu (Traditional)
-    fr: ['Anon', 'Armaldio', 'ChrisLightman', 'Elfisen', 'Feugy', 'MartinDelille', 'Oaugereau', 'Xeonarno', 'dc55028', 'jaybi', 'pstweb', 'veritable', 'xavismeh']             # français, French
+    fr: ['Anon', 'Armaldio', 'ChrisLightman', 'Elfisen', 'Feugy', 'MartinDelille', 'Oaugereau', 'Xeonarno', 'dc55028', 'jaybi', 'pstweb', 'veritable', 'xavismeh', 'CatSkald']             # français, French
     ja: ['Coderaulic', 'g1itch', 'kengos', 'treby']             # 日本語, Japanese
     ar: ['5y', 'ahmed80dz']             # العربية, Arabic
     'pt-BR': ['Bia41', 'Gutenberg Barros', 'Kieizroe', 'Matthew Burt', 'brunoporto', 'cassiocardoso', 'jklemm', 'Arkhad']        # português do Brasil, Portuguese (Brazil)
     'pt-PT': ['Imperadeiro98', 'Matthew Burt', 'ProgramadorLucas', 'ReiDuKuduro', 'batista', 'gutierri']        # Português (Portugal), Portuguese (Portugal)
-    pl: ['Anon', 'Kacper Ciepielewski', 'TigroTigro', 'kvasnyk']             # język polski, Polish
-    it: ['AlessioPaternoster', 'flauta', 'Atomk', 'Lionhear7']              # italiano, Italian
+    pl: ['Anon', 'Kacper Ciepielewski', 'TigroTigro', 'kvasnyk', 'CatSkald']             # język polski, Polish
+    it: ['flauta', 'Atomk', 'Lionhear7']              # italiano, Italian
     tr: ['Nazım Gediz Aydındoğmuş', 'cobaimelan', 'gediz', 'ilisyus', 'wakeup']             # Türkçe, Turkish
     nl: []        # Nederlands, Dutch
     'nl-BE': ['Glen De Cauwsemaecker', 'Ruben Vereecken']        # Nederlands (België), Dutch (Belgium)
@@ -129,12 +82,12 @@ module.exports = class DiplomatView extends ContributeClassView
     sl: []             # slovenščina, Slovene
     fi: []             # suomi, Finnish
     bg: []             # български език, Bulgarian
-    nb: ['bardeh', 'ebirkenes', 'matifol', 'mcclane654', 'mogsie', 'torehaug']             # Norsk Bokmål, Norwegian (Bokmål)
-    nn: []             # Norsk Nynorsk, Norwegian (Nynorsk)
+    nb: ['bardeh', 'ebirkenes', 'matifol', 'mcclane654', 'mogsie', 'torehaug', 'AnitaOlsen']             # Norsk Bokmål, Norwegian (Bokmål)
+    nn: ['Ayexa']             # Norsk Nynorsk, Norwegian (Nynorsk)
     he: ['OverProgram', 'monetita']             # עברית, Hebrew
     lt: []             # lietuvių kalba, Lithuanian
     sr: []             # српски, Serbian
-    uk: ['ImmortalJoker', 'OlenaGapak', 'Rarst', 'endrilian', 'fess89', 'gorodsb', 'probil']             # українська мова, Ukrainian
+    uk: ['ImmortalJoker', 'OlenaGapak', 'Rarst', 'endrilian', 'fess89', 'gorodsb', 'probil', 'CatSkald']             # українська, Ukrainian
     hi: []             # मानक हिन्दी, Hindi
     ur: []             # اُردُو, Urdu
     ms: []             # Bahasa Melayu, Bahasa Malaysia
@@ -148,3 +101,6 @@ module.exports = class DiplomatView extends ContributeClassView
     hr: []             # hrvatski jezik, Croatian
     mi: []             # te reo Māori, Māori
     haw: []            # ʻŌlelo Hawaiʻi, Hawaiian
+    kk: []            # қазақ тілі, Kazakh
+    az: []             # azərbaycan dili, Azerbaijani
+    fil: ['Celestz'] #Like This?

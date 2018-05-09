@@ -3,6 +3,7 @@ module.exports.thangNames = thangNames =
     # Female
     'Alali'
     'Anabel'
+    'Babaga'
     'Delma'
     'Dosha'
     'Gurzunn'
@@ -981,4 +982,8 @@ module.exports.thangNames = thangNames =
   'Duelist': [
     # Male
     'Alejandro'
+  ]
+  'Stalwart': [
+    # Male
+    'Gordon'
   ]

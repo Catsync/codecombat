@@ -1,3 +1,4 @@
+require('app/styles/editor/campaign/campaign-level-view.sass')
 CocoView = require 'views/core/CocoView'
 Level = require 'models/Level'
 LevelSession = require 'models/LevelSession'
@@ -80,7 +81,10 @@ module.exports = class CampaignLevelView extends CocoView
 
   onClickReplay: (e) ->
     sessionID = $(e.target).closest('tr').data 'session-id'
+    session = _.find @analytics.recentSessions.data, _id: sessionID
     url = "/play/level/#{@level.get('slug')}?session=#{sessionID}&observing=true"
+    if session.isForClassroom
+      url += '&course=560f1a9f22961295f9427742'
     window.open url, '_blank'
 
   updateAnalyticsGraphData: ->

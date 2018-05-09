@@ -1,3 +1,4 @@
+moment = require 'moment'
 mongoose = require 'mongoose'
 jsonschema = require '../../app/schemas/models/user'
 crypto = require 'crypto'
@@ -13,6 +14,7 @@ Promise = require 'bluebird'
 co = require 'co'
 core_utils = require '../../app/core/utils'
 mailChimp = require '../lib/mail-chimp'
+{ makeHostUrl } = require '../commons/urls'
 
 config = require '../../server_config'
 stripe = require('../lib/stripe_utils').api
@@ -51,9 +53,29 @@ UserSchema.methods.broadName = ->
   return name if name
   name = @get('name')
   return name if name
-  [emailName, emailDomain] = @get('email').split('@')
+  [emailName, emailDomain] = @get('email').split('@') if @get('email')
   return emailName if emailName
   return 'Anonymous'
+
+UserSchema.methods.cancelPayPalSubscription = co.wrap ->
+  userPayPalData = _.clone(@get('payPal') ? {})
+  return unless userPayPalData.billingAgreementID
+
+  delete userPayPalData.billingAgreementID
+  userPayPalData.cancelDate = new Date()
+  @set('payPal', userPayPalData)
+
+  # Use existing stripe.free end date functionality to run out remainder of cancelled payPal sub
+  # Approximating end date via uniform 31-day months
+  stripeInfo = _.cloneDeep(@get('stripe') ? {})
+  endDate = if userPayPalData.subscribeDate then moment(userPayPalData.subscribeDate) else moment()
+  today = moment()
+  endDate.add(1, 'M')  while endDate.isBefore(today)
+  endDate.add(2, 'd')
+  stripeInfo.free = endDate.format().substring(0, 10)
+  @set('stripe', stripeInfo)
+
+  yield @save()
 
 UserSchema.methods.isInGodMode = ->
   p = @get('permissions')
@@ -62,6 +84,9 @@ UserSchema.methods.isInGodMode = ->
 UserSchema.methods.isAdmin = ->
   p = @get('permissions')
   return p and 'admin' in p
+
+UserSchema.methods.isVerifiedTeacher = ->
+  return Boolean(@get('verifiedTeacher'))
 
 UserSchema.methods.hasPermission = (neededPermissions) ->
   permissions = @get('permissions') or []
@@ -89,9 +114,6 @@ UserSchema.methods.isStudent = ->
 UserSchema.methods.getUserInfo = ->
   id: @get('_id')
   email: if @get('anonymous') then 'Unregistered User' else @get('email')
-
-UserSchema.methods.getYearSubscriptionGroup = ->
-  core_utils.getYearSubscriptionGroup(@get('testGroupNumber'))
 
 UserSchema.methods.removeFromClassrooms = ->
   userID = @get('_id')
@@ -161,6 +183,7 @@ UserSchema.methods.setEmailSubscription = (newName, enabled) ->
 UserSchema.methods.gems = ->
   gemsEarned = @get('earned')?.gems ? 0
   gemsEarned = gemsEarned + 100000 if @isInGodMode()
+  gemsEarned += 1000 if @get('hourOfCode')
   gemsPurchased = @get('purchased')?.gems ? 0
   gemsSpent = @get('spent') ? 0
   gemsEarned + gemsPurchased - gemsSpent
@@ -176,7 +199,7 @@ UserSchema.methods.isEmailSubscriptionEnabled = (newName) ->
   return emails[newName]?.enabled
 
 UserSchema.methods.emailChanged = -> @originalEmail isnt @get('emailLower')
-  
+
 UserSchema.methods.updateServiceSettings = co.wrap ->
   return unless isProduction or GLOBAL.testing
   return if @updatedMailChimp
@@ -189,16 +212,16 @@ UserSchema.methods.updateServiceSettings = co.wrap ->
   newsSubsChanged = not _.isEqual(@get('emails'), @startingEmails)
   if @emailChanged() or newsSubsChanged
     yield @updateMailChimp()
-    
+
 
 UserSchema.methods.updateMailChimp = co.wrap ->
-  
+
   # construct interests object for MailChimp
   interests = {}
   for interest in mailChimp.interests
     interests[interest.mailChimpId] = @isEmailSubscriptionEnabled(interest.property)
   anyInterests = _.any(_.values(interests))
-  
+
   # grab the email this user has registered on MailChimp
   { email: mailChimpEmail } = @get('mailChimp') or {}
   mailChimpEmail = mailChimpEmail.toLowerCase() if mailChimpEmail
@@ -243,7 +266,7 @@ UserSchema.methods.updateMailChimp = co.wrap ->
   }
   yield mailChimp.api.put(mailChimp.makeSubscriberUrl(email), body)
   yield @update({$set: {mailChimp: {email}}})
-  
+
 
 UserSchema.statics.statsMapping =
   edits:
@@ -319,16 +342,26 @@ UserSchema.methods.incrementStat = (statName, done, inc=1) ->
   @save (err) -> done?(err)
 
 UserSchema.statics.unconflictName = unconflictName = (name, done) ->
-  User.findOne {slug: _.str.slugify(name)}, (err, otherUser) ->
+  slug = _.str.slugify(name)
+  if slug
+    query = {slug: slug}
+  else
+    # For un-sluggable names (like Chinese usernames), check based on nameLower
+    query = {nameLower: name.toLowerCase()}
+  User.findOne query, (err, otherUser) ->
     return done err if err?
     return done null, name unless otherUser
-    suffix = _.random(0, 9) + ''
-    unconflictName name + suffix, done
+    nameWithSuffix = name + _.random(0, 9)
+    while _.str.slugify(nameWithSuffix).length < 4
+      # Skip suggesting really short ones to save queries (they probably wouldn't work)
+      nameWithSuffix += _.random(0, 9)
+    unconflictName nameWithSuffix, done
 
 UserSchema.statics.unconflictNameAsync = Promise.promisify(unconflictName)
 
-UserSchema.methods.sendWelcomeEmail = ->
+UserSchema.methods.sendWelcomeEmail = (req) ->
   return if not @get('email')
+  return if core_utils.isSmokeTestEmail(@get('email'))
   { welcome_email_student, welcome_email_user } = sendwithus.templates
   timestamp = (new Date).getTime()
   data =
@@ -338,16 +371,21 @@ UserSchema.methods.sendWelcomeEmail = ->
       name: @broadName()
     email_data:
       name: @broadName()
-      verify_link: "http://codecombat.com/user/#{@_id}/verify/#{@verificationCode(timestamp)}"
+      verify_link: makeHostUrl(req, "/user/#{@_id}/verify/#{@verificationCode(timestamp)}")
+      teacher: @isTeacher()
   sendwithus.api.send data, (err, result) ->
     log.error "sendwithus post-save error: #{err}, result: #{result}" if err
 
 UserSchema.methods.hasSubscription = ->
-  return false unless stripeObject = @get('stripe')
-  return true if stripeObject.sponsorID
-  return true if stripeObject.subscriptionID
-  return true if stripeObject.free is true
-  return true if _.isString(stripeObject.free) and new Date() < new Date(stripeObject.free)
+  if payPal = @get('payPal')
+    return true if payPal.billingAgreementID
+  if stripeObject = @get('stripe')
+    return true if stripeObject.sponsorID
+    return true if stripeObject.subscriptionID
+    return true if stripeObject.free is true
+    return true if _.isString(stripeObject.free) and new Date() < new Date(stripeObject.free)
+  false
+
 
 UserSchema.methods.isPremium = ->
   return true if @isInGodMode()
@@ -357,7 +395,6 @@ UserSchema.methods.isPremium = ->
 
 UserSchema.methods.isOnPremiumServer = ->
   return true if @get('country') in ['brazil']
-  return true if @get('country') in ['china'] and (@isPremium() or @get('stripe'))
   return false
 
 UserSchema.methods.level = ->
@@ -479,7 +516,7 @@ UserSchema.post 'save', co.wrap ->
   catch e
     console.error 'User Post Save Error:', e.stack
 
-  
+
 UserSchema.post 'init', ->
   @set('anonymous', false) if @get('email') # TODO: Remove once User handler waterfall-signup system is removed, and we make sure all signup methods set anonymous to false
   @originalEmail = @get('emailLower')
@@ -509,9 +546,9 @@ UserSchema.methods.verificationCode = (timestamp) ->
 UserSchema.statics.privateProperties = [
   'permissions', 'email', 'mailChimp', 'firstName', 'lastName', 'gender', 'facebookID',
   'gplusID', 'music', 'volume', 'aceConfig', 'employerAt', 'signedEmployerAgreement',
-  'emailSubscriptions', 'emails', 'activity', 'stripe', 'stripeCustomerID', 'country',
+  'emailSubscriptions', 'emails', 'activity', 'stripe', 'stripeCustomerID',
   'schoolName', 'ageRange', 'role', 'enrollmentRequestSent', 'oAuthIdentities',
-  'coursePrepaid', 'coursePrepaidID'
+  'coursePrepaid', 'coursePrepaidID', 'lastAnnouncementSeen'
 ]
 UserSchema.statics.jsonSchema = jsonschema
 UserSchema.statics.editableProperties = [
@@ -520,7 +557,10 @@ UserSchema.statics.editableProperties = [
   'testGroupNumber', 'music', 'hourOfCode', 'hourOfCodeComplete', 'preferredLanguage',
   'wizard', 'aceConfig', 'autocastDelay', 'lastLevel', 'jobProfile', 'savedEmployerFilterAlerts',
   'heroConfig', 'iosIdentifierForVendor', 'siteref', 'referrer', 'schoolName', 'role', 'birthday',
-  'enrollmentRequestSent', 'israelId', 'school'
+  'enrollmentRequestSent', 'israelId', 'school', 'lastAnnouncementSeen'
+]
+UserSchema.statics.adminEditableProperties = [
+  'purchased'
 ]
 
 UserSchema.statics.serverProperties = ['passwordHash', 'emailLower', 'nameLower', 'passwordReset', 'lastIP']
@@ -528,6 +568,9 @@ UserSchema.statics.candidateProperties = [ 'jobProfile', 'jobProfileApproved', '
 
 UserSchema.set('toObject', {
   transform: (doc, ret, options) ->
+    if ret.preferredLanguage is null
+      # some users get preferredLanguage of null and it breaks the app for them. Have mongoose replace nulls
+      ret.preferredLanguage = 'en-US'
     req = options.req
     return ret unless req
     publicOnly = options.publicOnly
@@ -550,7 +593,7 @@ UserSchema.statics.makeNew = (req) ->
     newID = _.pad((User.idCounter++).toString(16), 24, '0')
     user.set('_id', newID)
   user.set 'testGroupNumber', Math.floor(Math.random() * 256)  # also in app/core/auth
-  lang = languages.languageCodeFromAcceptedLanguages req.acceptedLanguages
+  lang = languages.languageCodeFromRequest req
   { preferredLanguage } = req.query
   if preferredLanguage and _.contains(languages.languageCodes, preferredLanguage)
     user.set({ preferredLanguage })

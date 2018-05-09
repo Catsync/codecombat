@@ -2105,7 +2105,7 @@ getJasmineRequireObj().Suite = function(j$) {
     this.parentSuite = attrs.parentSuite;
     this.description = attrs.description;
     this.expectationFactory = attrs.expectationFactory;
-    this.expectationResultFactory = attrs.expectationResultFactory;
+    this.expectationResultFactory = attrs.expectationResultFactory || function() { }; // Fix misleading error when test setup fails
     this.throwOnExpectationFailure = !!attrs.throwOnExpectationFailure;
 
     this.beforeFns = [];
@@ -2249,7 +2249,7 @@ getJasmineRequireObj().Suite = function(j$) {
   };
 
   function isAfterAll(children) {
-    return children && children[0].result.status;
+    return children && children[0] && children[0].result.status;
   }
 
   function isFailure(args) {

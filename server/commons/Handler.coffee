@@ -17,6 +17,7 @@ module.exports = class Handler
   modelClass: null
   privateProperties: []
   editableProperties: []
+  adminEditableProperties: []
   postEditableProperties: []
   jsonSchema: {}
   waterfallFunctions: []
@@ -27,6 +28,7 @@ module.exports = class Handler
     @privateProperties = @modelClass?.privateProperties or @privateProperties or []
     @editableProperties = @modelClass?.editableProperties or @editableProperties or []
     @postEditableProperties = @modelClass?.postEditableProperties or @postEditableProperties or []
+    @adminEditableProperties = @modelClass?.adminEditableProperties or @adminEditableProperties or []
     @jsonSchema = @modelClass?.jsonSchema or @jsonSchema or {}
 
   # subclasses should override these methods
@@ -59,6 +61,7 @@ module.exports = class Handler
   formatEntity: (req, document) -> document?.toObject()
   getEditableProperties: (req, document) ->
     props = @editableProperties.slice()
+    props = props.concat @adminEditableProperties if req.user?.isAdmin()
     isBrandNew = req.method is 'POST' and not req.body.original
     props = props.concat @postEditableProperties if isBrandNew
 
@@ -85,7 +88,6 @@ module.exports = class Handler
     if err instanceof errors.NetworkError
       return res.status(err.code).send(err.toJSON())
     return @sendError(res, err.code, err.response) if err?.response and err?.code
-    log.error "Database error, #{err}"
     errors.serverError(res, 'Database error, ' + err)
 
   sendError: (res, code, message) ->
@@ -246,7 +248,7 @@ module.exports = class Handler
 
     # Hack: levels loading thang types need the components returned as well.
     # Need a way to specify a projection for a query.
-    project = {name: 1, original: 1, kind: 1, components: 1, prerenderedSpriteSheetData: 1}
+    project = {name: 1, original: 1, kind: 1, components: 1, prerenderedSpriteSheetData: 1, spriteType: 1}
     sort = if nonVersioned then {} else {'version.major': -1, 'version.minor': -1}
 
     makeFunc = (id) =>
@@ -402,7 +404,7 @@ module.exports = class Handler
   onPutSuccess: (req, doc) ->
 
   ###
-  TODO: think about pulling some common stuff out of postFirstVersion/postNewVersion
+  TODO: think about pulling some common stuff out of postFirstVersion / postNewVersion
   into a postVersion if we can figure out the breakpoints?
   ..... actually, probably better would be to do the returns with throws instead
   and have a handler which turns them into status codes and messages
@@ -467,7 +469,7 @@ module.exports = class Handler
         parentDocument.makeNewMajorVersion(updatedObject, done)
 
   notifyWatchersOfChange: (editor, changedDocument, editPath) ->
-    docLink = "http://codecombat.com#{editPath}"
+    docLink = "http://codecombat.com#{editPath}" # TODO: Dynamically generate URL with server/commons/urls.makeHostUrl
     @sendChangedSlackMessage creator: editor, target: changedDocument, docLink: docLink
     watchers = changedDocument.get('watchers') or []
     # Don't send these emails to the person who submitted the patch, or to Nick, George, or Scott.
@@ -487,7 +489,7 @@ module.exports = class Handler
       email_data:
         doc_name: changedDocument.get('name') or '???'
         submitter_name: editor.get('name') or '???'
-        doc_link: if editPath then "http://codecombat.com#{editPath}" else null
+        doc_link: if editPath then "http://codecombat.com#{editPath}" else null # TODO: Dynamically generate URL with server/commons/urls.makeHostUrl
         commit_message: changedDocument.get('commitMessage')
     sendwithus.api.send context, (err, result) ->
 
@@ -505,7 +507,8 @@ module.exports = class Handler
       model.set 'watchers', watchers
     model
 
-  validateDocumentInput: (input) ->
+  validateDocumentInput: (input, req) ->
+    # NOTE: req may not be included
     tv4 = require('tv4').tv4
     res = tv4.validateMultiple(input, @jsonSchema)
     res
@@ -556,7 +559,7 @@ module.exports = class Handler
     # so that validation doesn't get hung up on Date objects in the documents.
     delete obj.dateCreated
 
-    validation = @validateDocumentInput(obj)
+    validation = @validateDocumentInput(obj, req)
     return done(validation) unless validation.valid
 
     document.save (err) -> done(err)

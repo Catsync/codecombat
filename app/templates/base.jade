@@ -39,17 +39,21 @@ block header
                   a(href="/user/#{me.getSlugOrID()}", data-i18n="nav.profile")
                 li
                   a(href="/account/settings", data-i18n="play.settings")
-                if me.isAdmin() || !(me.isTeacher() || me.isStudent())
+                if me.isAdmin() || !(me.isTeacher() || me.isStudent() || me.freeOnly())
                   li
                     a(href="/account/payments", data-i18n="account.payments")
-                if me.isAdmin() || !(me.isTeacher() || me.isStudent()) || me.hasSubscription()
+                if me.isAdmin() || !(me.isTeacher() || me.isStudent() || me.freeOnly()) || me.hasSubscription()
                   li
                     a(href="/account/subscription", data-i18n="account.subscription")
-                if me.isAdmin() || !(me.isTeacher() || me.isStudent())
+                if me.isAdmin()
                   li
-                    a(href="/account/prepaid", data-i18n="account.prepaid_codes")
-                li
-                  a#logout-button(data-i18n="login.log_out")
+                    a(href="/admin", data-i18n="account_settings.admin")
+                if serverSession && serverSession.amActually
+                  li
+                    a#nav-stop-spying-button Stop Spying
+                if !features.codePlay
+                  li
+                    a#logout-button(data-i18n="login.log_out")
   
           else
             button.btn.btn-sm.btn-primary.header-font.signup-button(data-i18n="login.sign_up")
@@ -93,9 +97,10 @@ block footer
 
     #footer-credits
       span
-        span © All Rights Reserved
+        span(data-i18n="nav.copyright_prefix")
+        span= ' ©2018 CodeCombat'
         br
-        span CodeCombat 2015
+        span(data-i18n="nav.copyright_suffix")
       img#footer-logo(src="/images/pages/base/logo.png", alt="CodeCombat")
       span
         span Site Design by

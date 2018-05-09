@@ -1,3 +1,4 @@
+require('app/styles/artisans/student-solutions-view.sass')
 RootView = require 'views/core/RootView'
 template = require 'templates/artisans/student-solutions-view'
 
@@ -7,9 +8,11 @@ Campaign = require 'models/Campaign'
 Levels = require 'collections/Levels'
 Level = require 'models/Level'
 LevelSessions = require 'collections/LevelSessions'
-ace = require 'ace'
-utils = require 'core/utils'
-require 'vendor/aether-python'
+ace = require('lib/aceContainer')
+aceUtils = require 'core/aceUtils'
+# Aether = require 'aether'
+# require 'aether/parsers/python'
+# require 'esper.js'
 
 unless typeof esper is 'undefined'
   realm = new esper().realm
@@ -70,8 +73,10 @@ module.exports = class StudentSolutionsView extends RootView
         @solutions[hash] ?= []
         @solutions[hash].push session
 
+      oneOffs = 0
       tallyFn = (result, value, key) =>
-        return result if value is 1
+        return result if value is 1 and oneOffs > 40
+        oneOffs += 1 if value is 1
         result[value] ?= []
         result[value].push key
         result
@@ -88,7 +93,7 @@ module.exports = class StudentSolutionsView extends RootView
       editor = ace.edit el
       aceSession = editor.getSession()
       aceDoc = aceSession.getDocument()
-      aceSession.setMode utils.aceEditModes[lang]
+      aceSession.setMode aceUtils.aceEditModes[lang]
       editor.setTheme 'ace/theme/textmate'
       editor.setReadOnly true
 

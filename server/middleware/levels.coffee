@@ -1,16 +1,22 @@
+mongoose = require 'mongoose'
 wrap = require 'co-express'
+co = require 'co'
 errors = require '../commons/errors'
 Level = require '../models/Level'
 LevelSession = require '../models/LevelSession'
 Prepaid = require '../models/Prepaid'
 CourseInstance = require '../models/CourseInstance'
 Classroom = require '../models/Classroom'
+Campaign = require '../models/Campaign'
 Course = require '../models/Course'
+User = require '../models/User'
 database = require '../commons/database'
+codePlay = require '../../app/lib/code-play'
+log = require 'winston'
 
 module.exports =
   upsertSession: wrap (req, res) ->
-    level = yield database.getDocFromHandle(req, Level)
+    level = yield database.getDocFromHandle(req, Level)  # TODO: project only fields we need?
     if not level
       throw new errors.NotFound('Level not found.')
     levelOriginal = level.get('original')
@@ -23,12 +29,14 @@ module.exports =
 
     if req.query.team?
       sessionQuery.team = req.query.team
-      
+
     if req.query.courseInstance
+      unless mongoose.Types.ObjectId.isValid(req.query.courseInstance)
+        throw new errors.UnprocessableEntity('Invalid course instance id')
       courseInstance = yield CourseInstance.findById(req.query.courseInstance)
       if not courseInstance
         throw new errors.NotFound('Course Instance not found.')
-      if not _.find(courseInstance.get('members'), (memberID) -> memberID.equals(req.user._id))
+      unless _.find(courseInstance.get('members'), (memberID) -> memberID.equals(req.user._id)) or courseInstance.get('ownerID').equals(req.user._id)
         throw new errors.Forbidden('You must be a member of the Course Instance.')
       classroom = yield Classroom.findById(courseInstance.get('classroomID'))
       if not classroom
@@ -49,7 +57,18 @@ module.exports =
     session = yield LevelSession.findOne(sessionQuery)
     if session
       return res.send(session.toObject({req: req}))
-      
+
+    mirrorMatches = ['ace-of-coders', 'elemental-wars', 'the-battle-of-sky-span', 'tesla-tesoro', 'escort-duty', 'treasure-games']
+    if sessionQuery.team and level.get('slug') in mirrorMatches
+      # Find their other session for this, so that if it exists, we can initialize the new team's session with the mirror code.
+      otherTeam = if sessionQuery.team is 'humans' then 'ogres' else 'humans'
+      otherSessionQuery = _.defaults {team: otherTeam, code: {$exists: true}}, sessionQuery
+      otherSession = yield LevelSession.findOne(otherSessionQuery).select('team code codeLanguage')
+      if otherSession
+        heroSlugs = humans: 'hero-placeholder', ogres: 'hero-placeholder-1'
+        code = {}
+        code[heroSlugs[sessionQuery.team]] = plan: otherSession.get('code')[heroSlugs[otherSession.get('team')]].plan
+
     attrs = sessionQuery
     _.extend(attrs, {
       state:
@@ -60,11 +79,16 @@ module.exports =
         {target: req.user.id, access: 'owner'}
         {target: 'public', access: 'write'}
       ]
-      codeLanguage: req.user.get('aceConfig')?.language ? 'python'
+      codeLanguage: otherSession?.get('codeLanguage') ? req.user.get('aceConfig')?.language ? 'python'
     })
+    if code
+      attrs.code = code
 
-    if level.get('type') in ['course', 'course-ladder'] or req.query.course?
-      
+    if not req.user.isAnonymous() and level.get('slug') in ['treasure-games', 'escort-duty', 'tesla-tesoro', 'elemental-wars']
+      console.log "Allowing session creation for #{level.get('slug')} outside of any course"
+      attrs.isForClassroom = true
+    else if level.get('type') in ['course', 'course-ladder'] or req.query.course?
+
       # Find the course and classroom that has assigned this level, verify access
       # Handle either being given the courseInstance, or having to deduce it
       if courseInstance and classroom
@@ -94,29 +118,78 @@ module.exports =
             classroomWithLevel = classroom
             break
         break if classroomWithLevel
-      
+
       if course?.id
         prepaidIncludesCourse = req.user.prepaidIncludesCourse(course?.id)
       else
         prepaidIncludesCourse = true
-      
+
       unless classroomWithLevel and prepaidIncludesCourse
         throw new errors.PaymentRequired('You must be in a course which includes this level to play it')
-      
+
       course = yield Course.findById(courseID).select('free')
       unless course.get('free') or req.user.isEnrolled()
         throw new errors.PaymentRequired('You must be enrolled to access this content')
-        
+
       lang = targetLevel.primerLanguage or classroomWithLevel.get('aceConfig')?.language
       attrs.codeLanguage = lang if lang
-      
+
     else
       requiresSubscription = level.get('requiresSubscription') or (req.user.isOnPremiumServer() and level.get('campaign') and not (level.slug in ['dungeons-of-kithgard', 'gems-in-the-deep', 'shadow-guard', 'forgetful-gemsmith', 'signs-and-portents', 'true-names']))
-      canPlayAnyway = req.user.isPremium() or level.get 'adventurer'
+      canPlayAnyway = _.any([
+        req.user.isPremium(),
+        level.get('adventurer'),
+        req.features.codePlay and codePlay.canPlay(level.get('slug'))
+      ])
+
+      if req.query.campaign and not canPlayAnyway
+        # check if the campaign requesting this is game dev hoc, if so then let it work
+        query = {
+          _id: mongoose.Types.ObjectId(req.query.campaign),
+          type: 'hoc'
+          "levels.#{level.get('original')}": {$exists: true}
+        }
+        campaign = yield Campaign.count(query)
+        if campaign
+          canPlayAnyway = true
+
       if requiresSubscription and not canPlayAnyway
         throw new errors.PaymentRequired('This level requires a subscription to play')
-    
-    attrs.isForClassroom = course?
+
+    attrs.isForClassroom ?= course?
     session = new LevelSession(attrs)
+    if classroom # Potentially set intercom trigger flag on teacher
+      teacher = yield User.findOne({ _id: classroom.get('ownerID') })
+      reportLevelStarted({teacher, level})
     yield session.save()
     res.status(201).send(session.toObject({req: req}))
+
+# Notes on the teacher object that the relevant intercom trigger should be activated.
+reportLevelStarted = co.wrap ({teacher, level}) ->
+  intercom = require('../lib/intercom')
+  if level.get('slug') is 'wakka-maul'
+    yield teacher.update({ $set: { "studentMilestones.studentStartedWakkaMaul": true } })
+    update = {
+      user_id: teacher.get('_id') + '',
+      email: teacher.get('email'),
+      custom_attributes:
+        studentStartedWakkaMaul: true
+    }
+  if level.get('slug') is 'a-mayhem-of-munchkins'
+    yield teacher.update({ $set: { "studentMilestones.studentStartedMayhemOfMunchkins": true } })
+    update = {
+      user_id: teacher.get('_id') + '',
+      email: teacher.get('email'),
+      custom_attributes:
+        studentStartedMayhemOfMunchkins: true
+    }
+  if update
+    tries = 0
+    while tries < 100
+      tries += 1
+      try
+        yield intercom.users.create update
+        return
+      catch e
+        yield new Promise (accept, reject) -> setTimeout(accept, 1000)
+    log.error "Couldn't update intercom for user #{teacher.get('email')} in 100 tries"

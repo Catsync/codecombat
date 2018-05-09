@@ -52,15 +52,14 @@ module.exports = class Classroom extends CocoModel
         levels = []
         for level in course.levels when level.original
           continue if language? and level.primerLanguage is language
-          levels.push({key: level.original, practice: level.practice ? false})
+          levels.push({key: level.original, practice: level.practice ? false, assessment: level.assessment ? false})
         _.assign(@levelNumberMap, utils.createLevelNumberMap(levels))
     @levelNumberMap[levelID] ? defaultNumber
 
   removeMember: (userID, opts) ->
     options = {
-      url: _.result(@, 'url') + '/members'
+      url: _.result(@, 'url') + "/members/#{userID}"
       type: 'DELETE'
-      data: { userID: userID }
     }
     _.extend options, opts
     @fetch(options)
@@ -76,7 +75,8 @@ module.exports = class Classroom extends CocoModel
     }
 
   getLevels: (options={}) ->
-    # options: courseID, withoutLadderLevels, projectLevels
+    # options: courseID, withoutLadderLevels, projectLevels, assessmentLevels
+    # TODO: find a way to get the i18n in here so that level names can be translated (Courses don't include in their denormalized copy of levels)
     Levels = require 'collections/Levels'
     courses = @get('courses')
     return new Levels() unless courses
@@ -92,6 +92,8 @@ module.exports = class Classroom extends CocoModel
       levels.remove(levels.filter((level) -> level.isLadder()))
     if options.projectLevels
       levels.remove(levels.filter((level) -> level.get('shareable') isnt 'project'))
+    if options.assessmentLevels
+      levels.remove(levels.filter((level) -> not level.get('assessment')))
     return levels
 
   getLadderLevel: (courseID) ->
@@ -123,40 +125,41 @@ module.exports = class Classroom extends CocoModel
     levelsTotal = 0
     levelsLeft = 0
     lastPlayed = null
+    lastPlayedNumber = null
     playtime = 0
     levels = []
     for level, index in courseLevels.models
-      levelsTotal++ unless level.get('practice')
+      levelsTotal++ unless level.get('practice') or level.get('assessment')
       complete = false
       if session = levelSessionMap[level.get('original')]
         complete = session.get('state').complete ? false
         playtime += session.get('playtime') ? 0
         lastPlayed = level
-        lastPlayedNumber = index + 1
+        lastPlayedNumber = @getLevelNumber(level.get('original'), index + 1)
         if complete
           currentIndex = index
         else
           lastStarted = level
-          levelsLeft++ unless level.get('practice')
-      else if not level.get('practice')
+          levelsLeft++ unless level.get('practice') or level.get('assessment')
+      else if not (level.get('practice') or level.get('assessment'))
         levelsLeft++
       levels.push
+        assessment: level.get('assessment') ? false
         practice: level.get('practice') ? false
         complete: complete
     lastPlayed = lastStarted ? lastPlayed
+    lastPlayedNumber = '' if lastPlayed?.get('assessment')
     needsPractice = false
     nextIndex = 0
     if currentIndex >= 0
       currentLevel = courseLevels.models[currentIndex]
       currentPlaytime = levelSessionMap[currentLevel.get('original')]?.get('playtime') ? 0
-      needsPractice = utils.needsPractice(currentPlaytime, currentLevel.get('practiceThresholdMinutes'))
+      needsPractice = utils.needsPractice(currentPlaytime, currentLevel.get('practiceThresholdMinutes')) and not currentLevel.get('assessment')
       nextIndex = utils.findNextLevel(levels, currentIndex, needsPractice)
     nextLevel = courseLevels.models[nextIndex]
+    nextLevel = arena if levelsLeft is 0
     nextLevel ?= _.find courseLevels.models, (level) -> not levelSessionMap[level.get('original')]?.get('state')?.complete
 
-    lastPlayedNumber ?= 1
-    if courseLevels.length >= 1 and lastPlayedNumber < courseLevels.length
-      lastPlayedNumber = @getLevelNumber(courseLevels.models[lastPlayedNumber - 1].get('original'), lastPlayedNumber)
     stats =
       levels:
         size: levelsTotal
@@ -182,9 +185,10 @@ module.exports = class Classroom extends CocoModel
     })
     @fetch(options)
 
-  inviteMembers: (emails, options={}) ->
+  inviteMembers: (emails, recaptchaResponseToken, options={}) ->
     options.data ?= {}
     options.data.emails = emails
+    options.data.recaptchaResponseToken = recaptchaResponseToken
     options.url = @url() + '/invite-members'
     options.type = 'POST'
     @fetch(options)
@@ -196,3 +200,19 @@ module.exports = class Classroom extends CocoModel
     options.url = @url() + '/update-courses'
     options.type = 'POST'
     @fetch(options)
+
+  getSetting: (name) =>
+    settings = @get('settings') or {}
+    propInfo = Classroom.schema.properties.settings.properties
+    return settings[name] if name in Object.keys(settings)
+    if name in Object.keys(propInfo)
+      return propInfo[name].default
+
+    return false
+  
+  hasAssessments: (options={}) ->
+    if options.courseId
+      course = _.find(@get('courses'), (c) => c._id is options.courseId)
+      return false unless course
+      return _.any(course.levels, { assessment: true })
+    _.any(@get('courses'), (course) -> _.any(course.levels, { assessment: true }))

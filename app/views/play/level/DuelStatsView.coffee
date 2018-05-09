@@ -1,3 +1,4 @@
+require('app/styles/play/level/duel-stats-view.sass')
 CocoView = require 'views/core/CocoView'
 template = require 'templates/play/level/duel-stats-view'
 ThangAvatarView = require 'views/play/level/ThangAvatarView'
@@ -29,8 +30,7 @@ module.exports = class DuelStatsView extends CocoView
         team: if options.session.get('team') is 'humans' then 'ogres' else 'humans'
         heroConfig: options.session.get('heroConfig')
       }[prop]
-    @showsGold = options.level.get('slug') in ['wakka-maul']
-    @showsPower = options.level.get('slug') not in ['wakka-maul', 'dueling-grounds', 'cavern-survival', 'multiplayer-treasure-grove']
+    @showsPower = options.level.get('slug') not in ['wakka-maul', 'cross-bones', 'dueling-grounds', 'cavern-survival', 'multiplayer-treasure-grove']
     @teamGold = {}
     @players = (@formatPlayer team for team in ['humans', 'ogres'])
 
@@ -101,7 +101,7 @@ module.exports = class DuelStatsView extends CocoView
     super()
 
   onGoldChanged: (e) ->
-    return unless @showsGold
+    return unless @options.showsGold
     return if @teamGold[e.team] is e.gold
     @teamGold[e.team] = e.gold
     utils.replaceText @$find(e.team, '.gold-value'), '' + e.gold
