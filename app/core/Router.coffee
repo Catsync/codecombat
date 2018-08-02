@@ -40,6 +40,8 @@ module.exports = class CocoRouter extends Backbone.Router
     'account/invoices': go('account/InvoicesView')
     'account/prepaid': go('account/PrepaidView')
 
+    'licensor': go('LicensorView')
+
     'admin': go('admin/MainAdminView')
     'admin/clas': go('admin/CLAsView')
     'admin/classroom-content': go('admin/AdminClassroomContentView')
@@ -76,6 +78,7 @@ module.exports = class CocoRouter extends Backbone.Router
     'artisans/student-solutions': go('artisans/StudentSolutionsView')
     'artisans/tag-test': go('artisans/TagTestView')
     'artisans/bulk-level-editor': go('artisans/BulkLevelEditView')
+    'artisans/sandbox': go('artisans/SandboxView')
     'artisans/bulk-level-editor/:campaign': go('artisans/BulkLevelEditView')
 
     'careers': => window.location.href = 'https://jobs.lever.co/codecombat'
@@ -149,6 +152,7 @@ module.exports = class CocoRouter extends Backbone.Router
     'i18n/poll/:handle': go('i18n/I18NEditPollView')
     'i18n/course/:handle': go('i18n/I18NEditCourseView')
     'i18n/product/:handle': go('i18n/I18NEditProductView')
+    'i18n/article/:handle': go('i18n/I18NEditArticleView')
 
     'identify': go('user/IdentifyView')
     'il-signup': go('account/IsraelSignupView')
@@ -156,6 +160,8 @@ module.exports = class CocoRouter extends Backbone.Router
     'legal': go('LegalView')
 
     'logout': 'logout'
+
+    'minigames/conditionals': go('minigames/ConditionalMinigameView')
 
     'paypal/subscribe-callback': go('play/CampaignView')
     'paypal/cancel-callback': go('account/SubscriptionView')
@@ -218,7 +224,11 @@ module.exports = class CocoRouter extends Backbone.Router
     'test(/*subpath)': go('TestView')
 
     'user/:slugOrID': go('user/MainUserView')
+    'certificates': go('user/CertificatesView')
+    'certificates/:slugOrID': go('user/CertificatesView')
+
     'user/:userID/verify/:verificationCode': go('user/EmailVerifiedView')
+    'user/:userID/opt-in/:verificationCode': go('user/UserOptInView')
 
     '*name/': 'removeTrailingSlash'
     '*name': go('NotFoundView')
@@ -324,18 +334,10 @@ module.exports = class CocoRouter extends Backbone.Router
     ), 10
 
   initializeSocialMediaServices: ->
-    return if application.testing or application.demoing
+    return if application.testing or application.demoing or me.onChinaInfra()
     application.facebookHandler.loadAPI()
     application.gplusHandler.loadAPI()
     require('core/services/twitter')()
-
-  renderSocialButtons: =>
-    # TODO: Refactor remaining services to Handlers, use loadAPI success callback
-    @initializeSocialMediaServices()
-    $('.share-buttons, .partner-badges').addClass('fade-in').delay(10000).removeClass('fade-in', 5000)
-    application.facebookHandler.renderButtons()
-    application.gplusHandler.renderButtons()
-    twttr?.widgets?.load?()
 
   activateTab: ->
     base = _.string.words(document.location.pathname[1..], '/')[0]

@@ -33,6 +33,7 @@ module.exports = class HomeView extends RootView
     'click .setup-class-btn': 'onClickSetupClass'
     'click .my-classes-btn': 'onClickMyClassesButton'
     'click .resource-btn': 'onClickResourceButton'
+    'click a': 'onClickAnchor'
 
   shortcuts:
     'right': 'onRightPressed'
@@ -112,6 +113,18 @@ module.exports = class HomeView extends RootView
     e.preventDefault()
     window.tracker?.trackEvent $(e.target).data('event-action'), category: 'Homepage', []
 
+  onClickAnchor: (e) ->
+    return unless anchor = e?.currentTarget
+    # Track an event with action of the English version of the link text
+    translationKey = $(anchor).attr('data-i18n')
+    translationKey ?= $(anchor).children('[data-i18n]').attr('data-i18n')
+    if translationKey
+      anchorText = $.i18n.t(translationKey, {lng: 'en-US'})
+    else
+      anchorText = anchor.text
+    if anchorText
+      window.tracker?.trackEvent "Link: #{anchorText}", category: 'Homepage', ['Google Analytics']
+
   afterRender: ->
     require.ensure(['@vimeo/player'], (require) =>
       Player = require('@vimeo/player').default
@@ -148,6 +161,16 @@ module.exports = class HomeView extends RootView
       if document.location.hash is '#create-account-teacher'
         @openModalView(new CreateAccountModal({startOnPath: 'teacher'}))
     super()
+
+  afterInsert: ->
+    super()
+    # scroll to the current hash, once everything in the browser is set up
+    f = =>
+      return if @destroyed
+      link = $(document.location.hash)
+      if link.length
+        @scrollToLink(document.location.hash, 0)
+    _.delay(f, 100)
 
   destroy: ->
     $(window).off 'resize', @fitToPage

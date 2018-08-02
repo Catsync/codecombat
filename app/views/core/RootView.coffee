@@ -29,9 +29,6 @@ module.exports = class RootView extends CocoView
     'click .toggle-fullscreen': 'toggleFullscreen'
     'click .signup-button': 'onClickSignupButton'
     'click .login-button': 'onClickLoginButton'
-    'click a': 'onClickAnchor'
-    'click button': 'toggleModal'
-    'click li': 'toggleModal'
     'treema-error': 'onTreemaError'
     'click [data-i18n]': 'onClickTranslatedElement'
 
@@ -87,12 +84,6 @@ module.exports = class RootView extends CocoView
     window.tracker?.trackEvent 'Login', category: 'Homepage', ['Google Analytics'] if @id is 'home-view'
     @openModalView new AuthModal()
 
-  onClickAnchor: (e) ->
-    return if @destroyed
-    anchorText = e?.currentTarget?.text
-    window.tracker?.trackEvent anchorText, category: 'Homepage', ['Google Analytics'] if @id is 'home-view' and anchorText
-    @toggleModal e
-
   showLoading: ($el) ->
     $el ?= @$el.find('#site-content-area')
     super($el)
@@ -147,7 +138,7 @@ module.exports = class RootView extends CocoView
     for code, localeInfo of locale when (not (code in genericCodes) or code is initialVal)
       $select.append(
         $('<option></option>').val(code).text(localeInfo.nativeDescription))
-      if code is 'fr'
+      if code is 'pt-BR'
         $select.append(
           $('<option class="select-dash" disabled="disabled"></option>').text('----------------------------------'))
     $select.val(initialVal)
@@ -159,6 +150,7 @@ module.exports = class RootView extends CocoView
 
     locale.load(me.get('preferredLanguage', true)).then =>
       @onLanguageLoaded()
+      window.tracker.promptForCookieConsent()
 
   onLanguageLoaded: ->
     @render()

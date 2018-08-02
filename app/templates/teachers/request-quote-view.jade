@@ -89,6 +89,7 @@ block content
             .col-md-offset-2.col-md-4.col-sm-6
               .form-group
                 span.control-label(data-i18n="teachers_quote.phone_number")
+                span.spl.text-muted(data-i18n="signup.optional")
                 input.form-control(name="phoneNumber", data-i18n="[placeholder]teachers_quote.phone_number_help")
 
         if me.isAnonymous()
@@ -116,6 +117,7 @@ block content
               .form-group
                 span.control-label
                   span(data-i18n="teachers_quote.phone_number")
+                  span.spl.text-muted(data-i18n="signup.optional")
                 .help-block.small
                   em.text-info(data-i18n="teachers_quote.phone_number_help")
                 input.form-control(name="phoneNumber")
@@ -268,17 +270,18 @@ block content
         h5(data-i18n="teachers_quote.finish_signup")
         p(data-i18n="teachers_quote.finish_signup_p")
 
-        #social-network-signups
-          button#facebook-signup-btn.btn.btn-facebook.btn-lg.m-x-1
-            span.spr(data-i18n="teachers_quote.signup_with")
-            | Facebook
-            img.m-l-1(src='/images/pages/community/logo_facebook.png')
-          button#gplus-signup-btn.btn.btn-gplus.btn-lg.spr
-            span.spr(data-i18n="teachers_quote.signup_with")
-            | Google
-            img.m-l-1(src='/images/pages/community/logo_g+.png')
+        if !me.onChinaInfra()
+          #social-network-signups
+            button#facebook-signup-btn.btn.btn-facebook.btn-lg.m-x-1
+              span.spr(data-i18n="teachers_quote.signup_with")
+              | Facebook
+              img.m-l-1(src='/images/pages/community/logo_facebook.png')
+            button#gplus-signup-btn.btn.btn-gplus.btn-lg.spr
+              span.spr(data-i18n="teachers_quote.signup_with")
+              | Google
+              img.m-l-1(src='/images/pages/community/logo_g+.png')
 
-        .text-h1.text-uppercase(data-i18n="general.or")
+          .text-h1.text-uppercase(data-i18n="general.or")
 
         form#signup-form.text-left
           .row

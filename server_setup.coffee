@@ -8,7 +8,7 @@ compressible = require 'compressible'
 compression = require 'compression'
 
 geoip = require '@basicer/geoip-lite'
-
+crypto = require 'crypto'
 database = require './server/commons/database'
 perfmon = require './server/commons/perfmon'
 baseRoute = require './server/routes/base'
@@ -86,11 +86,11 @@ setupErrorMiddleware = (app) ->
           # noop return self all response-ending functions
           res.send = res.status = res.redirect = res.end = res.json = res.sendFile = res.download = res.sendStatus = -> res
         return
-          
+
       if err.status and 400 <= err.status < 500
         console.log err.stack if err.stack and config.TRACE_ROUTES
         return res.status(err.status).send("Error #{err.status}")
-      
+
       if err.name is 'CastError' and err.kind is 'ObjectId'
         console.log err.stack if err.stack and config.TRACE_ROUTES
         newError = new errors.UnprocessableEntity('Invalid id provided')
@@ -123,7 +123,7 @@ setupExpressMiddleware = (app) ->
     next()
 
   public_path = path.join(__dirname, 'public')
-  
+
   app.use('/', express.static(path.join(public_path, 'templates', 'static')))
 
   if config.buildInfo.sha isnt 'dev' and config.isProduction
@@ -146,7 +146,15 @@ setupExpressMiddleware = (app) ->
 
   app.use require('serve-favicon') path.join(__dirname, 'public', 'images', 'favicon.ico')
   app.use require('cookie-parser')()
-  app.use require('body-parser').json({limit: '25mb', strict: false})
+  app.use require('body-parser').json({limit: '25mb', strict: false, verify: (req, res, buf, encoding) ->
+    if req.headers['x-hub-signature']
+      # this is an intercom webhook request, with signature that needs checking
+      try
+        digest = crypto.createHmac('sha1', config.intercom.webhookHubSecret).update(buf).digest('hex')
+        req.signatureMatches = req.headers['x-hub-signature'] is "sha1=#{digest}"
+      catch e
+        log.info 'Error checking hub signature on Intercom webhook: ' + e
+  })
   app.use require('body-parser').urlencoded extended: true, limit: '25mb'
   app.use require('method-override')()
   app.use require('cookie-session')
@@ -249,7 +257,10 @@ setupFeaturesMiddleware = (app) ->
       features.playOnly = true
       features.noAds = true
       features.picoCtf = true
-      
+
+    if config.chinaInfra
+      features.chinaInfra = true
+
     next()
 
 # When config.TRACE_ROUTES is set, this logs a stack trace every time an endpoint sends a response.
@@ -294,9 +305,9 @@ exports.setupMiddleware = (app) ->
   setupDomainFilterMiddleware app
   setupQuickBailToMainHTML app
 
-  
+
   setupCountryTaggingMiddleware app
-  
+
   setupMiddlewareToSendOldBrowserWarningWhenPlayersViewLevelDirectly app
   setupExpressMiddleware app
   setupAPIDocs app # should happen after serving static files, so we serve the right favicon
@@ -306,7 +317,7 @@ exports.setupMiddleware = (app) ->
   setupUserDataRoute app
   setupCountryRedirectMiddleware app, 'china', config.chinaDomain
   setupCountryRedirectMiddleware app, 'brazil', config.brazilDomain
-  
+
   setupOneSecondDelayMiddleware app
   setupRedirectMiddleware app
   setupAjaxCaching app
@@ -345,11 +356,11 @@ renderMain = wrap (template, req, res) ->
   if req.features.codePlay
     template = template.replace '<!-- CodePlay Tags Header -->', codePlayTags.header
     template = template.replace '<!-- CodePlay Tags Footer -->', codePlayTags.footer
-   
+
   res.status(200).send template
 
 setupQuickBailToMainHTML = (app) ->
-  
+
   fast = (template) ->
     (req, res, next) ->
       req.features = features = {}
@@ -366,6 +377,9 @@ setupQuickBailToMainHTML = (app) ->
         features.codePlay = true # for one-off changes. If they're shared across different scenarios, refactor
       if /cn\.codecombat\.com/.test(req.get('host'))
         features.china = true
+
+      if config.chinaInfra
+        features.chinaInfra = true
 
       renderMain(template, req, res)
 
@@ -464,7 +478,8 @@ exports.setupRoutes = (app) ->
   routes.setup(app)
 
   baseRoute.setup app
-  setupFacebookCrossDomainCommunicationRoute app
+  unless config.chinaInfra
+    setupFacebookCrossDomainCommunicationRoute app
   setupUpdateBillingRoute app
   setupFallbackRouteToIndex app
   setupErrorMiddleware app

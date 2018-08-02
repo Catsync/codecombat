@@ -20,6 +20,7 @@ module.exports =
   files: require './files'
   headers: require './headers'
   healthcheck: require './healthcheck'
+  intercom: require './intercom'
   levels: require './levels'
   levelSessions: require './level-sessions'
   logging: require './logging'
@@ -36,3 +37,4 @@ module.exports =
   trialRequests: require './trial-requests'
   users: require './users'
   versions: require './versions'
+  oauth: require './oauth'

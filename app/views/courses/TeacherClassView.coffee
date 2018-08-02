@@ -175,9 +175,12 @@ module.exports = class TeacherClassView extends RootView
       @debouncedRender()
     @listenTo @courses, 'sync change update', ->
       @setCourseMembers() # Is this necessary?
-      @state.set selectedCourse: @courses.first() unless @state.get('selectedCourse')
+      unless @state.get 'selectedCourse'
+        @state.set 'selectedCourse', @courses.first()
+      @setSelectedCourseInstance()
     @listenTo @courseInstances, 'sync change update', ->
       @setCourseMembers()
+      @setSelectedCourseInstance()
     @listenTo @students, 'sync change update add remove reset', ->
       # Set state/props of things that depend on students?
       # Set specific parts of state based on the models, rather than just dumping the collection there?
@@ -193,12 +196,21 @@ module.exports = class TeacherClassView extends RootView
       @state.set students: @students
     @listenTo @, 'course-select:change', ({ selectedCourse }) ->
       @state.set selectedCourse: selectedCourse
+    @listenTo @state, 'change:selectedCourse', (e) ->
+      @setSelectedCourseInstance()
 
   setCourseMembers: =>
     for course in @courses.models
       course.instance = @courseInstances.findWhere({ courseID: course.id, classroomID: @classroom.id })
       course.members = course.instance?.get('members') or []
     null
+
+  setSelectedCourseInstance: ->
+    selectedCourse = @state.get('selectedCourse') or @courses.first()
+    if selectedCourse
+      @state.set 'selectedCourseInstance', @courseInstances.findWhere courseID: selectedCourse.id, classroomID: @classroom.id
+    else if @state.get 'selectedCourseInstance'
+      @state.set 'selectedCourseInstance', null
 
   onLoaded: ->
     # Get latest courses for student assignment dropdowns
@@ -294,7 +306,7 @@ module.exports = class TeacherClassView extends RootView
       progressData
       classStats: @calculateClassStats()
     }
-  
+
   getCourseAssessmentPairs: () ->
     @courseAssessmentPairs = []
     for course in @courses.models
@@ -576,9 +588,8 @@ module.exports = class TeacherClassView extends RootView
 
       requests = []
 
-      for prepaid in availablePrepaids
-        for i in _.range(prepaid.openSpots())
-          break unless _.size(unenrolledStudents) > 0
+      for prepaid in availablePrepaids when Math.min(_.size(unenrolledStudents), prepaid.openSpots()) > 0
+        for i in [0...Math.min(_.size(unenrolledStudents), prepaid.openSpots())]
           user = unenrolledStudents.shift()
           requests.push(prepaid.redeem(user))
 
@@ -626,7 +637,7 @@ module.exports = class TeacherClassView extends RootView
       throw e if e instanceof Error and not application.isProduction()
       text = if e instanceof Error then 'Runtime error' else e.responseJSON?.message or e.message or $.i18n.t('loading_error.unknown')
       noty { text, layout: 'center', type: 'error', killer: true, timeout: 5000 }
-  
+
   removeCourse: (courseID, members) ->
     return unless me.id is @classroom.get('ownerID') # May be viewing page as admin
     courseInstance = null
@@ -756,11 +767,8 @@ module.exports = class TeacherClassView extends RootView
   studentStatusString: (student) ->
     status = student.prepaidStatus()
     expires = student.get('coursePrepaid')?.endDate
-    string = switch status
-      when 'not-enrolled' then $.i18n.t('teacher.status_not_enrolled')
-      when 'enrolled' then (if expires then $.i18n.t('teacher.status_enrolled') else '-')
-      when 'expired' then $.i18n.t('teacher.status_expired')
-    return string.replace('{{date}}', moment(expires).utc().format('ll'))
+    date = if expires? then moment(expires).utc().format('ll') else ''
+    utils.formatStudentLicenseStatusDate(status, date)
 
   getTopScore: ({level, session}) ->
     return unless level and session

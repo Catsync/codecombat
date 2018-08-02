@@ -1,4 +1,3 @@
-GRAVATAR_URL = 'https://www.gravatar.com/'
 cache = {}
 CocoModel = require './CocoModel'
 ThangTypeConstants = require 'lib/ThangTypeConstants'
@@ -28,12 +27,15 @@ module.exports = class User extends CocoModel
   notyErrors: false
 
   isAdmin: -> 'admin' in @get('permissions', true)
+  isLicensor: -> 'licensor' in @get('permissions', true)
   isArtisan: -> 'artisan' in @get('permissions', true)
   isInGodMode: -> 'godmode' in @get('permissions', true)
   isAnonymous: -> @get('anonymous', true)
   isSmokeTestUser: -> User.isSmokeTestUser(@attributes)
   displayName: -> @get('name', true)
   broadName: -> User.broadName(@attributes)
+
+  inEU: (defaultIfUnknown=true) -> unless @get('country') then defaultIfUnknown else utils.inEU(@get('country'))
 
   getPhotoURL: (size=80) ->
     return '' if application.testing
@@ -43,11 +45,6 @@ module.exports = class User extends CocoModel
     @url() + "/request-verify-email"
 
   getSlugOrID: -> @get('slug') or @get('_id')
-
-  set: ->
-    if arguments[0] is 'jobProfileApproved' and @get("jobProfileApproved") is false and not @get("jobProfileApprovedDate")
-      @set "jobProfileApprovedDate", (new Date()).toISOString()
-    super arguments...
 
   @getUnconflictedName: (name, done) ->
     # deprecate in favor of @checkNameConflicts, which uses Promises and returns the whole response
@@ -87,6 +84,8 @@ module.exports = class User extends CocoModel
 
   isSessionless: ->
     Boolean((utils.getQueryVariable('dev', false) or me.isTeacher()) and utils.getQueryVariable('course', false) and not utils.getQueryVariable('course-instance'))
+
+  onChinaInfra: -> features?.chinaInfra ? false
 
   setRole: (role, force=false) ->
     oldRole = @get 'role'
@@ -209,14 +208,6 @@ module.exports = class User extends CocoModel
     return 0 unless numVideos > 0
     return me.get('testGroupNumber') % numVideos
 
-  testCinematicPlayback: ->
-    return @shouldTestCinematicPlayback if @shouldTestCinematicPlayback?
-    return true if me.isAdmin()
-    return false if me.isStudent() or me.isTeacher()
-    @shouldTestCinematicPlayback = me.get('testGroupNumber') % 2 is 0
-    application.tracker.identify cinematicPlayback: @shouldTestCinematicPlayback
-    @shouldTestCinematicPlayback
-
   hasSubscription: ->
     return false if me.isStudent() or me.isTeacher()
     if payPal = @get('payPal')
@@ -253,6 +244,29 @@ module.exports = class User extends CocoModel
         @trigger 'email-verify-error'
     })
 
+  sendKeepMeUpdatedVerificationCode: (code) ->
+    $.ajax({
+      method: 'POST'
+      url: "/db/user/#{@id}/keep-me-updated/#{code}"
+      success: (attributes) =>
+        this.set attributes
+        @trigger 'user-keep-me-updated-success'
+      error: =>
+        @trigger 'user-keep-me-updated-error'
+    })
+
+  sendNoDeleteEUVerificationCode: (code) ->
+    $.ajax({
+      method: 'POST'
+      url: "/db/user/#{@id}/no-delete-eu/#{code}"
+      success: (attributes) =>
+        this.set attributes
+        @trigger 'user-no-delete-eu-success'
+      error: =>
+        @trigger 'user-no-delete-eu-error'
+    })
+
+
   isEnrolled: -> @prepaidStatus() is 'enrolled'
 
   prepaidStatus: -> # 'not-enrolled', 'enrolled', 'expired'
@@ -276,6 +290,12 @@ module.exports = class User extends CocoModel
 
   fetchCreatorOfPrepaid: (prepaid) ->
     @fetch({url: "/db/prepaid/#{prepaid.id}/creator"})
+
+  fetchNameForClassmate: (options={}) ->
+    options.method = 'GET'
+    options.contentType = 'application/json'
+    options.url = "/db/user/#{@id}/name-for-classmate"
+    $.ajax options
 
   # Function meant for "me"
 
@@ -431,14 +451,6 @@ module.exports = class User extends CocoModel
 
   freeOnly: ->
     return features.freeOnly and not me.isPremium()
-
-  sendParentEmail: (email, options={}) ->
-    options.data ?= {}
-    options.data.type = 'subscribe modal parent'
-    options.data.email = email
-    options.url = '/db/user/-/send_one_time_email'
-    options.method = 'POST'
-    return $.ajax(options)
 
   subscribe: (token, options={}) ->
     stripe = _.clone(@get('stripe') ? {})

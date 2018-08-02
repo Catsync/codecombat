@@ -26,6 +26,9 @@ module.exports = class AdministerUserModal extends ModalView
     'click .add-new-courses-btn': 'onClickAddNewCoursesButton'
     'click .user-link': 'onClickUserLink'
     'click #verified-teacher-checkbox': 'onClickVerifiedTeacherCheckbox'
+    'click .edit-prepaids-info-btn': 'onClickEditPrepaidsInfoButton'
+    'click .cancel-prepaid-info-edit-btn': 'onClickCancelPrepaidInfoEditButton'
+    'click .save-prepaid-info-btn': 'onClickSavePrepaidInfo'
 
   initialize: (options, @userHandle) ->
     @user = new User({_id:@userHandle})
@@ -53,8 +56,9 @@ module.exports = class AdministerUserModal extends ModalView
     @currentCouponID = stripe.couponID
     @none = not (@free or @freeUntil or @coupon)
     @trialRequest = @trialRequests.first()
+    @prepaidTableState={}
     super()
-    
+
   onClickCreatePayment: ->
     service = @$('#payment-service').val()
     amount = parseInt(@$('#payment-amount').val())
@@ -113,8 +117,9 @@ module.exports = class AdministerUserModal extends ModalView
     return unless _.all(_.values(attrs))
     return unless attrs.maxRedeemers > 0
     return unless attrs.endDate and attrs.startDate and attrs.endDate > attrs.startDate
-    attrs.startDate = new Date(attrs.startDate).toISOString()
-    attrs.endDate = new Date(attrs.endDate).toISOString()
+    attrs.endDate = attrs.endDate + " " + "23:59"   # Otherwise, it ends at 12 am by default which does not include the date indicated
+    attrs.startDate = moment.timezone.tz(attrs.startDate, "America/Los_Angeles").toISOString()
+    attrs.endDate = moment.timezone.tz(attrs.endDate, "America/Los_Angeles").toISOString()
     _.extend(attrs, {
       type: 'course'
       creator: @user.id
@@ -206,3 +211,39 @@ module.exports = class AdministerUserModal extends ModalView
         @render()
       ), 2000)
     null
+
+  onClickEditPrepaidsInfoButton: (e) ->
+    prepaidId=@$(e.target).data('prepaid-id')
+    @prepaidTableState[prepaidId] = 'editMode'
+    @renderSelectors('#'+prepaidId)
+
+  onClickCancelPrepaidInfoEditButton: (e) ->
+    @prepaidTableState[@$(e.target).data('prepaid-id')] = 'viewMode'
+    @renderSelectors('#'+@$(e.target).data('prepaid-id'))
+
+  onClickSavePrepaidInfo: (e) ->
+    prepaidId= @$(e.target).data('prepaid-id')  
+    prepaidStartDate= @$el.find('#'+'startDate-'+prepaidId).val()
+    prepaidEndDate= @$el.find('#'+'endDate-'+prepaidId).val()
+    prepaidTotalLicenses=@$el.find('#'+'totalLicenses-'+prepaidId).val()
+    @prepaids.each (prepaid) =>
+      if (prepaid.get('_id') == prepaidId) 
+        #validations
+        unless prepaidStartDate and prepaidEndDate and prepaidTotalLicenses
+          return 
+        if(prepaidStartDate >= prepaidEndDate)
+          alert('End date cannot be on or before start date')
+          return
+        if(prepaidTotalLicenses < (prepaid.get('redeemers') || []).length)
+          alert('Total number of licenses cannot be less than used licenses')
+          return
+        prepaid.set('startDate', moment.timezone.tz(prepaidStartDate, "America/Los_Angeles").toISOString())
+        prepaid.set('endDate',  moment.timezone.tz(prepaidEndDate, "America/Los_Angeles").toISOString())
+        prepaid.set('maxRedeemers', prepaidTotalLicenses)
+        options = {}
+        prepaid.patch(options)
+        @listenTo prepaid, 'sync', -> 
+          @prepaidTableState[prepaidId] = 'viewMode'
+          @renderSelectors('#'+prepaidId)
+        return
+ 

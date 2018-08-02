@@ -22,11 +22,11 @@
           a(href="/teachers/resources") {{ $t("signup.teacher_list_resource_hub_4") }}
           =" "
           span {{ $t("signup.teacher_list_resource_hub_5") }}
-      span(v-html="$t('signup.teacher_additional_questions', {supportEmail})")
+      span(v-html="$t('signup.teacher_additional_questions', {supportEmail: supportEmail})")
 
     br
     div.text-center
-      input#subscribe-input(type="checkbox" name="subscribe" checked=true)
+      input#subscribe-input(type="checkbox" name="subscribe" v-bind:checked="!inEU")
       span.spl {{ $t("signup.teacher_email_announcements") }}
 
   .history-nav-buttons
